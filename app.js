@@ -5,6 +5,19 @@
   const COLS = 10;
   const EMPTY = -1;
   const ACCESS_PASSWORD = "8888";
+  const CSS_PX_PER_INCH = 96;
+  const TOUCH_HORIZONTAL_STEP = 0.15 * CSS_PX_PER_INCH;
+  const TOUCH_TAP_RADIUS = 0.10 * CSS_PX_PER_INCH;
+  const TOUCH_TAP_MAX_MS = 1000;
+  const TOUCH_DOWN_CONE = 0.41421357;
+  const TOUCH_SOFT_DROP_LATCH_MS = 20;
+  const TOUCH_SOFT_DROP_INTERVAL_MS = 35;
+  const TOUCH_SWIPE_MIN = 0.25 * CSS_PX_PER_INCH;
+  const TOUCH_SWIPE_SAMPLE_MS = 210;
+  const TOUCH_SWIPE_ACCEL = 60 * CSS_PX_PER_INCH;
+  const TOUCH_SWIPE_SIGNAL_FACTOR = 1.2;
+  const TOUCH_POST_DRAG_SPEED = 8 * CSS_PX_PER_INCH;
+  const TOUCH_TRANSITION_SPEED = 5.5 * CSS_PX_PER_INCH;
   const PIECES = ["I", "O", "T", "L", "J", "S", "Z"];
   const COLORS = [
     "#27d7f2",
@@ -129,6 +142,7 @@
 
   let lastInteractionHapticAt = -Infinity;
   let lastBoardTouchEndAt = -Infinity;
+  let softDropTimer = null;
 
   function haptic(duration = 14) {
     if (navigator.vibrate) {
@@ -345,6 +359,7 @@
   }
 
   function clearLines() {
+    cancelBoardControl();
     pushUndo();
     if (state.active && isValid(state.active)) {
       commitActiveIntoBoard();
@@ -528,6 +543,7 @@
 
   function holdActivePiece() {
     if (!state.active || !isValid(state.active) || state.holdLocked) return;
+    cancelBoardControl();
 
     const outgoingPiece = state.active.piece;
     if (state.holdPiece === null) {
@@ -568,6 +584,7 @@
   }
 
   function setPaint(index) {
+    cancelBoardControl();
     state.paint = index;
     document.querySelectorAll(".swatch").forEach(button => {
       button.classList.toggle("active", Number(button.dataset.color) === index);
@@ -611,6 +628,7 @@
 
   function startPieceDrag(piece, clientX, clientY) {
     if (state.usedPieces[piece]) return;
+    clearSoftDropTimer();
     pushUndo();
     if (state.active && isValid(state.active)) {
       commitActiveIntoBoard();
@@ -654,6 +672,192 @@
     drawBoard();
   }
 
+  function moveActiveHorizontal(steps) {
+    if (!state.active || steps === 0) return false;
+    const direction = Math.sign(steps);
+    let moved = false;
+    for (let i = 0; i < Math.abs(steps); i++) {
+      const candidate = { ...state.active, x: state.active.x + direction };
+      if (!isValid(candidate)) break;
+      state.active = candidate;
+      moved = true;
+    }
+    if (moved) interactionHaptic();
+    drawBoard();
+    return moved;
+  }
+
+  function clearSoftDropTimer() {
+    if (softDropTimer === null) return;
+    clearInterval(softDropTimer);
+    softDropTimer = null;
+  }
+
+  function softDropOneRow() {
+    if (!state.active) {
+      clearSoftDropTimer();
+      return false;
+    }
+    const candidate = { ...state.active, y: state.active.y + 1 };
+    if (!isValid(candidate)) {
+      clearSoftDropTimer();
+      return false;
+    }
+    state.active = candidate;
+    interactionHaptic(5, 30);
+    drawBoard();
+    return true;
+  }
+
+  function startSoftDrop(pointer) {
+    if (pointer.softDropping) return;
+    pointer.softDropping = true;
+    pointer.didAction = true;
+    softDropOneRow();
+    if (softDropTimer === null) {
+      softDropTimer = setInterval(softDropOneRow, TOUCH_SOFT_DROP_INTERVAL_MS);
+    }
+  }
+
+  function stopSoftDrop(pointer) {
+    clearSoftDropTimer();
+    if (pointer) pointer.softDropping = false;
+  }
+
+  function addControlSample(pointer, x, y, time) {
+    pointer.samples.push({ x, y, time });
+    if (pointer.samples.length > 30) pointer.samples.shift();
+  }
+
+  function beginBoardControl(clientX, clientY) {
+    clearSoftDropTimer();
+    const now = performance.now();
+    state.pointer = {
+      mode: "control",
+      sourceX: clientX,
+      sourceY: clientY,
+      startX: clientX,
+      startY: clientY,
+      startedAt: now,
+      maxDistance: 0,
+      downSince: null,
+      hadHorizontal: false,
+      softDropping: false,
+      didAction: false,
+      samples: []
+    };
+    addControlSample(state.pointer, clientX, clientY, now);
+  }
+
+  function updateBoardControl(clientX, clientY) {
+    const pointer = state.pointer;
+    if (!pointer || pointer.mode !== "control" || !state.active) return;
+
+    const now = performance.now();
+    addControlSample(pointer, clientX, clientY, now);
+    pointer.maxDistance = Math.max(pointer.maxDistance, Math.hypot(clientX - pointer.startX, clientY - pointer.startY));
+
+    const dx = clientX - pointer.sourceX;
+    const dy = clientY - pointer.sourceY;
+    if (Math.abs(dx) >= TOUCH_HORIZONTAL_STEP && Math.abs(dx) > Math.abs(dy)) {
+      const steps = Math.sign(dx) * Math.round(Math.abs(dx) / TOUCH_HORIZONTAL_STEP);
+      stopSoftDrop(pointer);
+      moveActiveHorizontal(steps);
+      pointer.hadHorizontal = true;
+      pointer.didAction = true;
+      pointer.sourceX = clientX;
+      pointer.sourceY = clientY;
+      pointer.downSince = null;
+      pointer.samples = [];
+      addControlSample(pointer, clientX, clientY, now);
+      return;
+    }
+
+    const isDown = dy > 0
+      && Math.abs(dx) <= dy * TOUCH_DOWN_CONE
+      && dx * dx + dy * dy >= TOUCH_HORIZONTAL_STEP * TOUCH_HORIZONTAL_STEP;
+    if (!isDown) {
+      pointer.downSince = null;
+      return;
+    }
+
+    if (pointer.downSince === null) pointer.downSince = now;
+    if (!pointer.softDropping && now - pointer.downSince >= TOUCH_SOFT_DROP_LATCH_MS) {
+      startSoftDrop(pointer);
+    }
+  }
+
+  function isHardDropGesture(pointer, clientX, clientY, endedAt) {
+    addControlSample(pointer, clientX, clientY, endedAt);
+    const recent = pointer.samples.filter(sample => endedAt - sample.time <= TOUCH_SWIPE_SAMPLE_MS);
+    if (recent.length < 2) return false;
+
+    const first = recent[0];
+    const last = recent[recent.length - 1];
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+    if (dy <= TOUCH_SWIPE_MIN || dy <= Math.abs(dx)) return false;
+
+    const motion = [];
+    let previousVelocityY = 0;
+    let peakDownSpeed = 0;
+    for (let i = 1; i < recent.length; i++) {
+      const dt = Math.max((recent[i].time - recent[i - 1].time) / 1000, 1 / 120);
+      const velocityY = (recent[i].y - recent[i - 1].y) / dt;
+      const accelerationY = (velocityY - previousVelocityY) / dt;
+      peakDownSpeed = Math.max(peakDownSpeed, velocityY);
+      motion.push({ velocityY, accelerationY });
+      previousVelocityY = velocityY;
+    }
+
+    const accelerationRms = motion.length === 0
+      ? 0
+      : Math.sqrt(motion.reduce((sum, sample) => sum + sample.accelerationY * sample.accelerationY, 0) / motion.length);
+    const accelerationThreshold = Math.max(TOUCH_SWIPE_ACCEL, accelerationRms * TOUCH_SWIPE_SIGNAL_FACTOR);
+    const speedThreshold = pointer.hadHorizontal ? TOUCH_POST_DRAG_SPEED : 0;
+    const hasDownSignal = motion.some(sample => sample.accelerationY > accelerationThreshold
+      && sample.velocityY > speedThreshold);
+    const canUseFallback = pointer.hadHorizontal || pointer.softDropping;
+    return hasDownSignal || (canUseFallback && peakDownSpeed >= TOUCH_TRANSITION_SPEED);
+  }
+
+  function hardDropActive() {
+    if (!state.active || !isValid(state.active)) return;
+    const landing = landingPosition(state.active);
+    if (landing.y !== state.active.y) {
+      state.active = landing;
+      haptic(12);
+      drawBoard();
+    }
+  }
+
+  function finishBoardControl(clientX, clientY) {
+    const pointer = state.pointer;
+    if (!pointer || pointer.mode !== "control") return;
+    const endedAt = performance.now();
+    const hardDrop = isHardDropGesture(pointer, clientX, clientY, endedAt);
+    const wasSoftDropping = pointer.softDropping;
+    clearSoftDropTimer();
+
+    if (hardDrop) {
+      hardDropActive();
+    } else if (!pointer.didAction && !wasSoftDropping
+      && pointer.maxDistance <= TOUCH_TAP_RADIUS
+      && endedAt - pointer.startedAt <= TOUCH_TAP_MAX_MS) {
+      const { rect } = boardMetrics();
+      const inside = clientX >= rect.left && clientX <= rect.right
+        && clientY >= rect.top && clientY <= rect.bottom;
+      if (inside) rotateActive(clientX < rect.left + rect.width / 2 ? -1 : 1);
+    }
+
+    state.pointer = null;
+  }
+
+  function cancelBoardControl() {
+    clearSoftDropTimer();
+    state.pointer = null;
+  }
+
   function setupPalette() {
     const names = ["I", "O", "T", "L", "J", "S", "Z", "Gray", "Erase"];
     for (let i = 0; i < names.length; i++) {
@@ -668,6 +872,7 @@
   }
 
   function resetBoard() {
+    cancelBoardControl();
     pushUndo();
     state.board = Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
     state.groups = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
@@ -712,6 +917,7 @@
       if (button) setPaint(Number(button.dataset.color));
     });
     trayEl.addEventListener("pointerdown", event => {
+      if (!event.isPrimary) return;
       const tile = event.target.closest(".piece-tile");
       if (!tile) return;
       event.preventDefault();
@@ -720,11 +926,13 @@
       trayEl.setPointerCapture(event.pointerId);
     }, { passive: false });
     trayEl.addEventListener("pointermove", event => {
+      if (!event.isPrimary) return;
       if (state.pointer?.mode !== "piece") return;
       event.preventDefault();
       moveActiveTo(event.clientX, event.clientY);
     }, { passive: false });
     trayEl.addEventListener("pointerup", event => {
+      if (!event.isPrimary) return;
       if (state.pointer?.mode === "piece") {
         event.preventDefault();
         state.pointer = null;
@@ -739,6 +947,7 @@
       if (state.pointer?.mode === "piece") state.pointer = null;
     });
     boardCanvas.addEventListener("pointerdown", event => {
+      if (!event.isPrimary) return;
       event.preventDefault();
       if (state.tool === "draw") {
         state.pointer = { mode: "paint" };
@@ -747,57 +956,36 @@
         return;
       }
       if (state.active) {
-        const pointer = pointerCell(event.clientX, event.clientY);
-        state.pointer = {
-          mode: "move",
-          grabX: pointer.x - state.active.x,
-          grabY: pointer.y - state.active.y,
-          startX: event.clientX,
-          startY: event.clientY,
-          moved: false
-        };
+        beginBoardControl(event.clientX, event.clientY);
         boardCanvas.setPointerCapture(event.pointerId);
         return;
       }
       const pointer = pointerCell(event.clientX, event.clientY);
       if (selectPlacedPiece(pointer.x, pointer.y)) {
-        state.pointer = {
-          mode: "move",
-          grabX: pointer.x - state.active.x,
-          grabY: pointer.y - state.active.y,
-          startX: event.clientX,
-          startY: event.clientY,
-          moved: false
-        };
+        beginBoardControl(event.clientX, event.clientY);
         boardCanvas.setPointerCapture(event.pointerId);
         haptic();
         drawAll();
       }
     }, { passive: false });
     boardCanvas.addEventListener("pointermove", event => {
+      if (!event.isPrimary) return;
       if (!state.pointer) return;
       event.preventDefault();
       if (state.pointer?.mode === "paint") {
         paintAt(event.clientX, event.clientY, false);
-      } else if (state.pointer?.mode === "move") {
-        const distance = Math.hypot(event.clientX - state.pointer.startX, event.clientY - state.pointer.startY);
-        if (!state.pointer.moved && distance < 9) return;
-        state.pointer.moved = true;
-        moveActiveTo(event.clientX, event.clientY);
+      } else if (state.pointer?.mode === "control") {
+        updateBoardControl(event.clientX, event.clientY);
       } else if (state.pointer?.mode === "piece") {
         moveActiveTo(event.clientX, event.clientY);
       }
     }, { passive: false });
     boardCanvas.addEventListener("pointerup", event => {
+      if (!event.isPrimary) return;
       event.preventDefault();
       const pointerState = state.pointer;
-      if (pointerState?.mode === "move" && !pointerState.moved && state.active) {
-        const { rect } = boardMetrics();
-        const inside = event.clientX >= rect.left && event.clientX <= rect.right
-          && event.clientY >= rect.top && event.clientY <= rect.bottom;
-        if (inside) rotateActive(event.clientX < rect.left + rect.width / 2 ? -1 : 1);
-      }
-      state.pointer = null;
+      if (pointerState?.mode === "control") finishBoardControl(event.clientX, event.clientY);
+      else state.pointer = null;
       try {
         boardCanvas.releasePointerCapture(event.pointerId);
       } catch (_) {
@@ -805,7 +993,7 @@
       }
     }, { passive: false });
     boardCanvas.addEventListener("pointercancel", () => {
-      state.pointer = null;
+      cancelBoardControl();
     });
     boardCanvas.addEventListener("touchend", event => {
       const now = performance.now();
@@ -816,6 +1004,7 @@
     document.getElementById("undoBtn").addEventListener("click", () => {
       const snapshot = state.undo.pop();
       if (snapshot) {
+        cancelBoardControl();
         restore(snapshot);
         haptic();
       }
@@ -834,6 +1023,9 @@
       holdActivePiece();
     });
     window.addEventListener("resize", drawBoard);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) cancelBoardControl();
+    });
   }
 
   setupPalette();
