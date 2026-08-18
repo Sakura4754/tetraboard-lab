@@ -816,7 +816,16 @@
     document.getElementById("clearBtn").addEventListener("click", clearLines);
     document.getElementById("resetBtn").addEventListener("click", resetBoard);
     document.getElementById("resetBagBtn").addEventListener("click", resetBag);
-    holdEl.addEventListener("click", holdActivePiece);
+    holdEl.addEventListener("pointerdown", event => {
+      if (!event.isPrimary) return;
+      event.preventDefault();
+      holdActivePiece();
+    }, { passive: false });
+    holdEl.addEventListener("keydown", event => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      holdActivePiece();
+    });
     window.addEventListener("resize", drawBoard);
   }
 
