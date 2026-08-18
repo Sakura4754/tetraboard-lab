@@ -379,6 +379,31 @@
     targetCtx.stroke();
   }
 
+  function drawGhostCell(targetCtx, x, y, size, color) {
+    const pad = Math.max(1, size * 0.1);
+    const radius = Math.max(3, size * 0.16);
+    targetCtx.save();
+    targetCtx.globalAlpha = 0.2;
+    targetCtx.fillStyle = color;
+    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
+    targetCtx.fill();
+    targetCtx.globalAlpha = 0.72;
+    targetCtx.strokeStyle = color;
+    targetCtx.lineWidth = Math.max(1.25, size * 0.07);
+    targetCtx.setLineDash([Math.max(2, size * 0.2), Math.max(2, size * 0.13)]);
+    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+
+  function landingPosition(piece) {
+    let landing = { ...piece };
+    while (isValid({ ...landing, y: landing.y + 1 })) {
+      landing.y++;
+    }
+    return landing;
+  }
+
   function roundRect(targetCtx, x, y, w, h, r) {
     targetCtx.beginPath();
     targetCtx.moveTo(x + r, y);
@@ -420,6 +445,15 @@
         const value = state.board[y][x];
         if (value !== EMPTY) {
           drawCell(ctx, x * cell, y * cell, cell, PAINT_COLORS[value] || PAINT_COLORS[7], false);
+        }
+      }
+    }
+
+    if (state.active && isValid(state.active)) {
+      const ghost = landingPosition(state.active);
+      if (ghost.y !== state.active.y) {
+        for (const [x, y] of cellsFor(ghost)) {
+          drawGhostCell(ctx, x * cell, y * cell, cell, COLORS[state.active.piece]);
         }
       }
     }
