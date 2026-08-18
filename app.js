@@ -113,10 +113,19 @@
     pointer: null
   };
 
+  let lastInteractionHapticAt = -Infinity;
+
   function haptic(duration = 14) {
     if (navigator.vibrate) {
       navigator.vibrate(duration);
     }
+  }
+
+  function interactionHaptic(duration = 6, minInterval = 28) {
+    const now = performance.now();
+    if (now - lastInteractionHapticAt < minInterval) return;
+    lastInteractionHapticAt = now;
+    haptic(duration);
   }
 
   function setupPasswordGate() {
@@ -476,6 +485,7 @@
     dissolveGroup(state.groups[y][x]);
     state.board[y][x] = value;
     state.groups[y][x] = 0;
+    interactionHaptic();
     drawBoard();
   }
 
@@ -521,6 +531,7 @@
         state.active = candidate;
         consumeTrayPiece(state.pointer.piece);
         drawTray();
+        interactionHaptic();
       }
       drawBoard();
       return;
@@ -534,7 +545,9 @@
       y: pointer.y - grabY
     });
     if (isValid(next)) {
+      const moved = next.x !== state.active.x || next.y !== state.active.y;
       state.active = next;
+      if (moved) interactionHaptic();
     }
     drawBoard();
   }
