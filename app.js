@@ -119,6 +119,7 @@
     trayOrder: shuffledBag(),
     usedPieces: Array(7).fill(false),
     holdPiece: null,
+    holdLocked: false,
     undo: [],
     tool: "piece",
     paint: 7,
@@ -181,6 +182,7 @@
       trayOrder: state.trayOrder.slice(),
       usedPieces: state.usedPieces.slice(),
       holdPiece: state.holdPiece,
+      holdLocked: state.holdLocked,
       active: state.active ? { ...state.active } : null
     });
     if (state.undo.length > 80) state.undo.shift();
@@ -194,6 +196,7 @@
     state.trayOrder = snapshot.trayOrder ? snapshot.trayOrder.slice() : PIECES.map((_, index) => index);
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
     state.holdPiece = Number.isInteger(snapshot.holdPiece) ? snapshot.holdPiece : null;
+    state.holdLocked = Boolean(snapshot.holdLocked);
     state.active = snapshot.active ? { ...snapshot.active } : null;
     drawAll();
   }
@@ -251,6 +254,7 @@
       y: state.active.y
     };
     state.active = null;
+    state.holdLocked = false;
   }
 
   function selectPlacedPiece(x, y) {
@@ -268,6 +272,7 @@
     }
     delete state.pieceRecords[groupId];
     state.active = { ...record, groupId };
+    state.holdLocked = false;
     return true;
   }
 
@@ -483,10 +488,11 @@
       drawPieceCanvas(holdCanvas, state.holdPiece, 0.82);
     }
     holdEl.classList.toggle("filled", state.holdPiece !== null);
+    holdEl.disabled = !state.active || state.holdLocked;
   }
 
   function holdActivePiece() {
-    if (!state.active || !isValid(state.active)) return;
+    if (!state.active || !isValid(state.active) || state.holdLocked) return;
 
     const outgoingPiece = state.active.piece;
     if (state.holdPiece === null) {
@@ -512,6 +518,7 @@
       state.active = candidate;
     }
 
+    state.holdLocked = true;
     haptic();
     drawAll();
   }
@@ -589,6 +596,7 @@
         state.active = candidate;
         consumeTrayPiece(state.pointer.piece);
         drawTray();
+        drawHold();
         interactionHaptic();
       }
       drawBoard();
@@ -632,6 +640,7 @@
     state.trayOrder = shuffledBag();
     state.usedPieces = Array(7).fill(false);
     state.holdPiece = null;
+    state.holdLocked = false;
     state.active = null;
     drawAll();
     haptic();
