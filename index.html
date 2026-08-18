@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#101319">
+  <title>TetraBoard Lab Web</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <section id="passwordGate" class="password-gate" aria-label="Password required">
+    <form id="passwordForm" class="password-panel">
+      <h2>TetraBoard Lab</h2>
+      <label for="passwordInput">Enter password</label>
+      <input id="passwordInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off" required>
+      <p id="passwordError" class="password-error" role="alert" aria-live="polite"></p>
+      <button type="submit">Unlock</button>
+    </form>
+  </section>
+
+  <main id="appShell" class="app-shell locked" aria-hidden="true">
+    <header class="top-bar">
+      <h1>TetraBoard Lab <span>Mobile</span></h1>
+      <div class="top-actions">
+        <button id="resetBtn" class="icon-button" type="button" aria-label="Reset board">Reset</button>
+        <button id="resetBagBtn" class="icon-button secondary" type="button" aria-label="Reset seven-piece bag">Reset Bag</button>
+      </div>
+    </header>
+
+    <section class="workspace" aria-label="TetraBoard Lab workspace">
+      <aside class="palette-panel" aria-label="Paint palette">
+        <div id="palette" class="palette"></div>
+      </aside>
+
+      <section class="board-panel">
+        <canvas id="boardCanvas" class="board" width="360" height="720" aria-label="10 by 20 board"></canvas>
+      </section>
+
+      <aside class="piece-panel" aria-label="Piece tray">
+        <div id="pieceTray" class="piece-tray"></div>
+      </aside>
+    </section>
+
+    <nav class="action-bar" aria-label="Actions">
+      <button class="tool" data-tool="draw" type="button">Draw</button>
+      <button class="tool active" data-tool="piece" type="button">Piece</button>
+      <button id="clearBtn" type="button">Clear Lines</button>
+      <button id="undoBtn" type="button">Undo</button>
+    </nav>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
