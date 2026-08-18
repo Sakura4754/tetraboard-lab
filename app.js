@@ -499,6 +499,7 @@
       pushUndo();
       state.holdPiece = outgoingPiece;
       state.active = null;
+      state.holdLocked = false;
     } else {
       const incomingPiece = state.holdPiece;
       const candidate = clampPieceIntoBoard({
@@ -516,9 +517,9 @@
       pushUndo();
       state.holdPiece = outgoingPiece;
       state.active = candidate;
+      state.holdLocked = true;
     }
 
-    state.holdLocked = true;
     haptic();
     drawAll();
   }
