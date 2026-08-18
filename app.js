@@ -27,6 +27,15 @@
     "#8994a5"
   ];
 
+  function shuffledBag() {
+    const bag = PIECES.map((_, index) => index);
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    return bag;
+  }
+
   const SHAPES = [
     [
       [[0, 1], [1, 1], [2, 1], [3, 1]],
@@ -105,6 +114,7 @@
     groups: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
     pieceRecords: {},
     nextGroupId: 1,
+    trayOrder: shuffledBag(),
     usedPieces: Array(7).fill(false),
     undo: [],
     tool: "piece",
@@ -165,6 +175,7 @@
       groups: copyBoard(state.groups),
       pieceRecords: JSON.parse(JSON.stringify(state.pieceRecords)),
       nextGroupId: state.nextGroupId,
+      trayOrder: state.trayOrder.slice(),
       usedPieces: state.usedPieces.slice(),
       active: state.active ? { ...state.active } : null
     });
@@ -176,6 +187,7 @@
     state.groups = snapshot.groups ? copyBoard(snapshot.groups) : Array.from({ length: ROWS }, () => Array(COLS).fill(0));
     state.pieceRecords = snapshot.pieceRecords ? JSON.parse(JSON.stringify(snapshot.pieceRecords)) : {};
     state.nextGroupId = snapshot.nextGroupId || 1;
+    state.trayOrder = snapshot.trayOrder ? snapshot.trayOrder.slice() : PIECES.map((_, index) => index);
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
     state.active = snapshot.active ? { ...snapshot.active } : null;
     drawAll();
@@ -444,7 +456,7 @@
 
   function drawTray() {
     trayEl.replaceChildren();
-    for (let piece = 0; piece < 7; piece++) {
+    for (const piece of state.trayOrder) {
       const tile = document.createElement("button");
       tile.className = "piece-tile";
       tile.type = "button";
@@ -571,6 +583,7 @@
     state.groups = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
     state.pieceRecords = {};
     state.nextGroupId = 1;
+    state.trayOrder = shuffledBag();
     state.usedPieces = Array(7).fill(false);
     state.active = null;
     drawAll();
@@ -578,8 +591,8 @@
   }
 
   function resetBag() {
-    if (!state.usedPieces.some(Boolean)) return;
     pushUndo();
+    state.trayOrder = shuffledBag();
     state.usedPieces.fill(false);
     drawTray();
     haptic();
@@ -588,6 +601,7 @@
   function consumeTrayPiece(piece) {
     state.usedPieces[piece] = true;
     if (state.usedPieces.every(Boolean)) {
+      state.trayOrder = shuffledBag();
       state.usedPieces.fill(false);
     }
   }
