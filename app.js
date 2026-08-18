@@ -128,6 +128,7 @@
   };
 
   let lastInteractionHapticAt = -Infinity;
+  let lastBoardTouchEndAt = -Infinity;
 
   function haptic(duration = 14) {
     if (navigator.vibrate) {
@@ -806,6 +807,12 @@
     boardCanvas.addEventListener("pointercancel", () => {
       state.pointer = null;
     });
+    boardCanvas.addEventListener("touchend", event => {
+      const now = performance.now();
+      if (now - lastBoardTouchEndAt < 360) event.preventDefault();
+      lastBoardTouchEndAt = now;
+    }, { passive: false });
+    boardCanvas.addEventListener("dblclick", event => event.preventDefault());
     document.getElementById("undoBtn").addEventListener("click", () => {
       const snapshot = state.undo.pop();
       if (snapshot) {
