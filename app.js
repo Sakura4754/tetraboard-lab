@@ -108,6 +108,8 @@
   const ctx = boardCanvas.getContext("2d");
   const paletteEl = document.getElementById("palette");
   const trayEl = document.getElementById("pieceTray");
+  const holdCanvas = document.getElementById("holdCanvas");
+  const holdEl = document.getElementById("holdSlot");
 
   const state = {
     board: Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY)),
@@ -116,6 +118,7 @@
     nextGroupId: 1,
     trayOrder: shuffledBag(),
     usedPieces: Array(7).fill(false),
+    holdPiece: null,
     undo: [],
     tool: "piece",
     paint: 7,
@@ -177,6 +180,7 @@
       nextGroupId: state.nextGroupId,
       trayOrder: state.trayOrder.slice(),
       usedPieces: state.usedPieces.slice(),
+      holdPiece: state.holdPiece,
       active: state.active ? { ...state.active } : null
     });
     if (state.undo.length > 80) state.undo.shift();
@@ -189,6 +193,7 @@
     state.nextGroupId = snapshot.nextGroupId || 1;
     state.trayOrder = snapshot.trayOrder ? snapshot.trayOrder.slice() : PIECES.map((_, index) => index);
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
+    state.holdPiece = Number.isInteger(snapshot.holdPiece) ? snapshot.holdPiece : null;
     state.active = snapshot.active ? { ...snapshot.active } : null;
     drawAll();
   }
@@ -445,6 +450,7 @@
   function drawAll() {
     drawBoard();
     drawTray();
+    drawHold();
   }
 
   function makeCanvas(width, height) {
@@ -468,6 +474,46 @@
       tile.append(canvas);
       trayEl.append(tile);
     }
+  }
+
+  function drawHold() {
+    const holdCtx = holdCanvas.getContext("2d");
+    holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+    if (state.holdPiece !== null) {
+      drawPieceCanvas(holdCanvas, state.holdPiece, 0.82);
+    }
+    holdEl.classList.toggle("filled", state.holdPiece !== null);
+  }
+
+  function holdActivePiece() {
+    if (!state.active || !isValid(state.active)) return;
+
+    const outgoingPiece = state.active.piece;
+    if (state.holdPiece === null) {
+      pushUndo();
+      state.holdPiece = outgoingPiece;
+      state.active = null;
+    } else {
+      const incomingPiece = state.holdPiece;
+      const candidate = clampPieceIntoBoard({
+        piece: incomingPiece,
+        rotation: 0,
+        x: state.active.x,
+        y: state.active.y
+      });
+
+      if (!isValid(candidate)) {
+        haptic([20, 25, 20]);
+        return;
+      }
+
+      pushUndo();
+      state.holdPiece = outgoingPiece;
+      state.active = candidate;
+    }
+
+    haptic();
+    drawAll();
   }
 
   function setTool(tool) {
@@ -585,6 +631,7 @@
     state.nextGroupId = 1;
     state.trayOrder = shuffledBag();
     state.usedPieces = Array(7).fill(false);
+    state.holdPiece = null;
     state.active = null;
     drawAll();
     haptic();
@@ -704,6 +751,7 @@
     document.getElementById("clearBtn").addEventListener("click", clearLines);
     document.getElementById("resetBtn").addEventListener("click", resetBoard);
     document.getElementById("resetBagBtn").addEventListener("click", resetBag);
+    holdEl.addEventListener("click", holdActivePiece);
     window.addEventListener("resize", drawBoard);
   }
 
