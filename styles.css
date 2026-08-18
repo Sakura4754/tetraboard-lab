@@ -28,6 +28,11 @@ body {
   color: var(--text);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   touch-action: none;
+  overscroll-behavior: none;
+}
+
+html {
+  background-color: #101319;
 }
 
 body {
@@ -131,6 +136,12 @@ button {
   gap: 6px;
   background: linear-gradient(180deg, rgba(25, 35, 53, 0.98), rgba(11, 17, 28, 0.99));
   box-shadow: 0 0 36px rgba(0, 0, 0, 0.4);
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .app-shell {
+    max-height: none;
+  }
 }
 
 .top-bar {
