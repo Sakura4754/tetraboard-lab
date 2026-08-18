@@ -31,6 +31,26 @@ body {
   overscroll-behavior: none;
 }
 
+.app-shell,
+.app-shell * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.workspace,
+.board,
+.piece-tray,
+.palette,
+.hold-slot {
+  touch-action: none;
+}
+
+canvas {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
 html {
   background-color: #101319;
 }
@@ -123,7 +143,9 @@ button {
   font: inherit;
   font-weight: 800;
   touch-action: manipulation;
+  -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .app-shell {

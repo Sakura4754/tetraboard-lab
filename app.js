@@ -698,6 +698,11 @@
   }
 
   function bindEvents() {
+    const appShell = document.getElementById("appShell");
+    for (const eventName of ["dragstart", "selectstart", "contextmenu"]) {
+      appShell.addEventListener(eventName, event => event.preventDefault());
+    }
+
     document.querySelectorAll(".tool").forEach(button => {
       button.addEventListener("click", () => setTool(button.dataset.tool));
     });
@@ -712,15 +717,25 @@
       const piece = Number(tile.dataset.piece);
       startPieceDrag(piece, event.clientX, event.clientY);
       trayEl.setPointerCapture(event.pointerId);
-    });
+    }, { passive: false });
     trayEl.addEventListener("pointermove", event => {
-      if (state.pointer?.mode === "piece") moveActiveTo(event.clientX, event.clientY);
-    });
+      if (state.pointer?.mode !== "piece") return;
+      event.preventDefault();
+      moveActiveTo(event.clientX, event.clientY);
+    }, { passive: false });
     trayEl.addEventListener("pointerup", event => {
       if (state.pointer?.mode === "piece") {
+        event.preventDefault();
         state.pointer = null;
-        trayEl.releasePointerCapture(event.pointerId);
+        try {
+          trayEl.releasePointerCapture(event.pointerId);
+        } catch (_) {
+          // Pointer capture may already be gone on Safari.
+        }
       }
+    }, { passive: false });
+    trayEl.addEventListener("pointercancel", () => {
+      if (state.pointer?.mode === "piece") state.pointer = null;
     });
     boardCanvas.addEventListener("pointerdown", event => {
       event.preventDefault();
@@ -757,8 +772,10 @@
         haptic();
         drawAll();
       }
-    });
+    }, { passive: false });
     boardCanvas.addEventListener("pointermove", event => {
+      if (!state.pointer) return;
+      event.preventDefault();
       if (state.pointer?.mode === "paint") {
         paintAt(event.clientX, event.clientY, false);
       } else if (state.pointer?.mode === "move") {
@@ -769,8 +786,9 @@
       } else if (state.pointer?.mode === "piece") {
         moveActiveTo(event.clientX, event.clientY);
       }
-    });
+    }, { passive: false });
     boardCanvas.addEventListener("pointerup", event => {
+      event.preventDefault();
       const pointerState = state.pointer;
       if (pointerState?.mode === "move" && !pointerState.moved && state.active) {
         const { rect } = boardMetrics();
@@ -784,6 +802,9 @@
       } catch (_) {
         // Pointer capture may already be gone on Safari.
       }
+    }, { passive: false });
+    boardCanvas.addEventListener("pointercancel", () => {
+      state.pointer = null;
     });
     document.getElementById("undoBtn").addEventListener("click", () => {
       const snapshot = state.undo.pop();
