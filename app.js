@@ -687,6 +687,21 @@
     return moved;
   }
 
+  function moveActiveVertical(steps) {
+    if (!state.active || steps === 0) return false;
+    const direction = Math.sign(steps);
+    let moved = false;
+    for (let i = 0; i < Math.abs(steps); i++) {
+      const candidate = { ...state.active, y: state.active.y + direction };
+      if (!isValid(candidate)) break;
+      state.active = candidate;
+      moved = true;
+    }
+    if (moved) interactionHaptic();
+    drawBoard();
+    return moved;
+  }
+
   function clearSoftDropTimer() {
     if (softDropTimer === null) return;
     clearInterval(softDropTimer);
@@ -764,6 +779,19 @@
       stopSoftDrop(pointer);
       moveActiveHorizontal(steps);
       pointer.hadHorizontal = true;
+      pointer.didAction = true;
+      pointer.sourceX = clientX;
+      pointer.sourceY = clientY;
+      pointer.downSince = null;
+      pointer.samples = [];
+      addControlSample(pointer, clientX, clientY, now);
+      return;
+    }
+
+    if (dy <= -TOUCH_HORIZONTAL_STEP && Math.abs(dy) > Math.abs(dx)) {
+      const steps = -Math.round(Math.abs(dy) / TOUCH_HORIZONTAL_STEP);
+      stopSoftDrop(pointer);
+      moveActiveVertical(steps);
       pointer.didAction = true;
       pointer.sourceX = clientX;
       pointer.sourceY = clientY;
