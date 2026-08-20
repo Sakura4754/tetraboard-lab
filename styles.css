@@ -318,11 +318,12 @@ h1 span {
 
 .action-bar {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 5px;
 }
 
 .action-bar button {
+  min-width: 0;
   min-height: 0;
   height: 100%;
   padding: 0 4px;
