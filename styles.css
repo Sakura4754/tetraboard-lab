@@ -60,83 +60,6 @@ body {
   place-items: center;
 }
 
-.app-shell.locked {
-  visibility: hidden;
-}
-
-.password-gate {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: #0b111c;
-}
-
-.password-panel {
-  width: min(100%, 320px);
-  padding: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: #1b2433;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-}
-
-.password-panel h2 {
-  margin: 0 0 20px;
-  font-size: 24px;
-  letter-spacing: 0;
-}
-
-.password-panel label {
-  display: block;
-  margin-bottom: 7px;
-  color: #c8d5e5;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.password-panel input {
-  width: 100%;
-  height: 48px;
-  border: 1px solid #52657f;
-  border-radius: 7px;
-  outline: 0;
-  background: #0d1522;
-  color: #ffffff;
-  font: 800 22px/1 system-ui, sans-serif;
-  text-align: center;
-  letter-spacing: 0;
-}
-
-.password-panel input:focus {
-  border-color: #73cdf9;
-  box-shadow: 0 0 0 3px rgba(115, 205, 249, 0.2);
-}
-
-.password-error {
-  min-height: 20px;
-  margin: 7px 0;
-  color: #ff8585;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.password-panel button {
-  width: 100%;
-  height: 46px;
-  border-radius: 7px;
-  background: linear-gradient(180deg, #5fc8fa, #2478b8);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 3px 0 rgba(0, 0, 0, 0.32);
-}
-
-.password-panel button:active {
-  transform: translateY(2px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 0 rgba(0, 0, 0, 0.32);
-}
-
 button {
   border: 0;
   color: var(--text);
@@ -395,7 +318,7 @@ h1 span {
 
 .action-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 5px;
 }
 
@@ -403,7 +326,145 @@ h1 span {
   min-height: 0;
   height: 100%;
   padding: 0 4px;
-  font-size: clamp(12px, 3.2vw, 15px);
+  font-size: clamp(11px, 3vw, 14px);
+}
+
+.file-dialog[hidden] {
+  display: none;
+}
+
+.file-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(3, 7, 13, 0.76);
+  touch-action: manipulation;
+}
+
+.file-panel {
+  width: min(100%, 380px);
+  max-height: min(720px, calc(100dvh - 32px));
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid #5e728f;
+  border-radius: 8px;
+  background: #172131;
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.file-header h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.file-close {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 7px;
+  background: #2a3547;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.file-label {
+  display: block;
+  margin: 11px 0 6px;
+  color: #bfd0e3;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.file-name,
+.file-list {
+  width: 100%;
+  border: 1px solid #526884;
+  border-radius: 7px;
+  outline: 0;
+  background: #0c1420;
+  color: #f4f7fb;
+  font: 700 15px/1.3 system-ui, sans-serif;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.file-name {
+  height: 44px;
+  padding: 0 12px;
+}
+
+.file-list {
+  height: 150px;
+  padding: 5px;
+}
+
+.file-list option {
+  padding: 9px 8px;
+  border-radius: 5px;
+}
+
+.file-name:focus,
+.file-list:focus {
+  border-color: #79cff8;
+  box-shadow: 0 0 0 3px rgba(121, 207, 248, 0.17);
+}
+
+.file-status {
+  min-height: 19px;
+  margin: 7px 0 9px;
+  color: #9edcff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-status.error {
+  color: #ff9292;
+}
+
+.file-actions {
+  display: grid;
+  gap: 7px;
+}
+
+.file-actions.primary {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.file-actions.json {
+  grid-template-columns: repeat(2, 1fr);
+  margin-top: 9px;
+}
+
+.file-actions button {
+  min-height: 44px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #3a485e, #253044);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 3px 0 rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+}
+
+.file-actions button:active,
+.file-close:active {
+  transform: translateY(2px);
+}
+
+.file-actions .danger {
+  background: linear-gradient(180deg, #a84b55, #71313a);
 }
 
 @media (min-width: 431px) {

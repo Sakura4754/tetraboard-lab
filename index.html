@@ -17,17 +17,7 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <section id="passwordGate" class="password-gate" aria-label="Password required">
-    <form id="passwordForm" class="password-panel">
-      <h2>TetraBoard Lab</h2>
-      <label for="passwordInput">Enter password</label>
-      <input id="passwordInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off" required>
-      <p id="passwordError" class="password-error" role="alert" aria-live="polite"></p>
-      <button type="submit">Unlock</button>
-    </form>
-  </section>
-
-  <main id="appShell" class="app-shell locked" aria-hidden="true">
+  <main id="appShell" class="app-shell">
     <header class="top-bar">
       <h1>TetraBoard Lab <span>Mobile</span></h1>
       <div class="top-actions">
@@ -59,8 +49,36 @@
       <button class="tool active" data-tool="piece" type="button">Piece</button>
       <button id="clearBtn" type="button">Clear Lines</button>
       <button id="undoBtn" type="button">Undo</button>
+      <button id="fileBtn" type="button">File</button>
     </nav>
   </main>
+
+  <div id="fileDialog" class="file-dialog" role="dialog" aria-modal="true" aria-labelledby="fileDialogTitle" hidden>
+    <section class="file-panel">
+      <header class="file-header">
+        <h2 id="fileDialogTitle">File</h2>
+        <button id="fileCloseBtn" class="file-close" type="button" aria-label="Close file menu">×</button>
+      </header>
+
+      <label class="file-label" for="fileNameInput">File name</label>
+      <input id="fileNameInput" class="file-name" type="text" maxlength="48" autocomplete="off" placeholder="My board">
+
+      <label class="file-label" for="fileList">Saved boards</label>
+      <select id="fileList" class="file-list" size="5" aria-label="Saved boards"></select>
+      <p id="fileStatus" class="file-status" role="status" aria-live="polite"></p>
+
+      <div class="file-actions primary">
+        <button id="fileSaveBtn" type="button">Save</button>
+        <button id="fileLoadBtn" type="button">Load</button>
+        <button id="fileDeleteBtn" class="danger" type="button">Delete</button>
+      </div>
+      <div class="file-actions json">
+        <button id="fileExportBtn" type="button">Export JSON</button>
+        <button id="fileImportBtn" type="button">Import JSON</button>
+      </div>
+      <input id="fileImportInput" type="file" accept="application/json,.json" hidden>
+    </section>
+  </div>
 
   <script src="./app.js"></script>
 </body>

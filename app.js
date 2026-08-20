@@ -4,7 +4,7 @@
   const ROWS = 20;
   const COLS = 10;
   const EMPTY = -1;
-  const ACCESS_PASSWORD = "8888";
+  const SAVE_STORAGE_KEY = "tetraboard-lab-saves-v1";
   const PIECES = ["I", "O", "T", "L", "J", "S", "Z"];
   const COLORS = [
     "#27d7f2",
@@ -143,39 +143,12 @@
     haptic(duration);
   }
 
-  function setupPasswordGate() {
-    const gate = document.getElementById("passwordGate");
-    const form = document.getElementById("passwordForm");
-    const input = document.getElementById("passwordInput");
-    const error = document.getElementById("passwordError");
-    const shell = document.getElementById("appShell");
-
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      if (input.value !== ACCESS_PASSWORD) {
-        error.textContent = "Incorrect password";
-        input.value = "";
-        input.focus();
-        if (navigator.vibrate) navigator.vibrate([30, 35, 30]);
-        return;
-      }
-      error.textContent = "";
-      shell.classList.remove("locked");
-      shell.setAttribute("aria-hidden", "false");
-      gate.remove();
-      haptic();
-      drawAll();
-    });
-
-    requestAnimationFrame(() => input.focus());
-  }
-
   function copyBoard(board) {
     return board.map(row => row.slice());
   }
 
-  function pushUndo() {
-    state.undo.push({
+  function snapshotState() {
+    return {
       board: copyBoard(state.board),
       groups: copyBoard(state.groups),
       pieceRecords: JSON.parse(JSON.stringify(state.pieceRecords)),
@@ -185,7 +158,11 @@
       holdPiece: state.holdPiece,
       holdLocked: state.holdLocked,
       active: state.active ? { ...state.active } : null
-    });
+    };
+  }
+
+  function pushUndo() {
+    state.undo.push(snapshotState());
     if (state.undo.length > 80) state.undo.shift();
   }
 
@@ -698,6 +675,223 @@
     }
   }
 
+  function readSaves() {
+    try {
+      const value = JSON.parse(localStorage.getItem(SAVE_STORAGE_KEY) || "{}");
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeSaves(saves) {
+    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(saves));
+  }
+
+  function isMatrix(value, rows, cols, predicate) {
+    return Array.isArray(value)
+      && value.length === rows
+      && value.every(row => Array.isArray(row) && row.length === cols && row.every(predicate));
+  }
+
+  function normalizeSaveState(value) {
+    if (!value || typeof value !== "object") throw new Error("Invalid save data.");
+    if (!isMatrix(value.board, ROWS, COLS, cell => Number.isInteger(cell) && cell >= EMPTY && cell <= 7)) {
+      throw new Error("This JSON does not contain a valid 10 × 20 board.");
+    }
+
+    const groups = isMatrix(value.groups, ROWS, COLS, cell => Number.isInteger(cell) && cell >= 0)
+      ? copyBoard(value.groups)
+      : Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    const trayOrder = Array.isArray(value.trayOrder)
+      && value.trayOrder.length === 7
+      && new Set(value.trayOrder).size === 7
+      && value.trayOrder.every(piece => Number.isInteger(piece) && piece >= 0 && piece < 7)
+      ? value.trayOrder.slice()
+      : PIECES.map((_, index) => index);
+    const usedPieces = Array.isArray(value.usedPieces) && value.usedPieces.length === 7
+      ? value.usedPieces.map(Boolean)
+      : Array(7).fill(false);
+    const holdPiece = value.holdPiece === null || value.holdPiece === undefined
+      ? null
+      : (Number.isInteger(value.holdPiece) && value.holdPiece >= 0 && value.holdPiece < 7 ? value.holdPiece : null);
+    const active = value.active && typeof value.active === "object"
+      && Number.isInteger(value.active.piece) && value.active.piece >= 0 && value.active.piece < 7
+      && Number.isInteger(value.active.rotation) && Number.isInteger(value.active.x) && Number.isInteger(value.active.y)
+      ? { ...value.active }
+      : null;
+
+    return {
+      board: copyBoard(value.board),
+      groups,
+      pieceRecords: value.pieceRecords && typeof value.pieceRecords === "object"
+        ? JSON.parse(JSON.stringify(value.pieceRecords))
+        : {},
+      nextGroupId: Number.isInteger(value.nextGroupId) && value.nextGroupId > 0 ? value.nextGroupId : 1,
+      trayOrder,
+      usedPieces,
+      holdPiece,
+      holdLocked: Boolean(value.holdLocked),
+      active
+    };
+  }
+
+  function setFileStatus(message, isError = false) {
+    const status = document.getElementById("fileStatus");
+    status.textContent = message;
+    status.classList.toggle("error", isError);
+  }
+
+  function refreshFileList(selectedName = "") {
+    const list = document.getElementById("fileList");
+    const saves = readSaves();
+    const names = Object.keys(saves).sort((a, b) => {
+      const timeA = Date.parse(saves[a]?.updatedAt || "") || 0;
+      const timeB = Date.parse(saves[b]?.updatedAt || "") || 0;
+      return timeB - timeA || a.localeCompare(b);
+    });
+    list.replaceChildren();
+    for (const name of names) {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      list.append(option);
+    }
+    if (selectedName && saves[selectedName]) list.value = selectedName;
+    if (!list.value && names.length) list.value = names[0];
+    return saves;
+  }
+
+  function openFileDialog() {
+    document.getElementById("fileDialog").hidden = false;
+    refreshFileList();
+    document.getElementById("fileNameInput").value = selectedFileName();
+    setFileStatus("");
+    haptic();
+  }
+
+  function closeFileDialog() {
+    document.getElementById("fileDialog").hidden = true;
+    haptic(6);
+  }
+
+  function selectedFileName() {
+    return document.getElementById("fileList").value;
+  }
+
+  function saveCurrentFile() {
+    const input = document.getElementById("fileNameInput");
+    const name = input.value.trim();
+    if (!name) {
+      setFileStatus("Enter a file name first.", true);
+      input.focus();
+      return;
+    }
+
+    try {
+      const saves = readSaves();
+      if (saves[name] && !window.confirm(`Replace “${name}”?`)) return;
+      saves[name] = { name, updatedAt: new Date().toISOString(), state: snapshotState() };
+      writeSaves(saves);
+      refreshFileList(name);
+      setFileStatus(`Saved “${name}”.`);
+      haptic();
+    } catch (_) {
+      setFileStatus("Unable to save on this device.", true);
+    }
+  }
+
+  function loadSelectedFile() {
+    const name = selectedFileName();
+    const record = readSaves()[name];
+    if (!record) {
+      setFileStatus("Select a saved board first.", true);
+      return;
+    }
+    try {
+      const nextState = normalizeSaveState(record.state);
+      pushUndo();
+      restore(nextState);
+      haptic();
+      closeFileDialog();
+    } catch (error) {
+      setFileStatus(error.message || "Unable to load this save.", true);
+    }
+  }
+
+  function deleteSelectedFile() {
+    const name = selectedFileName();
+    if (!name) {
+      setFileStatus("Select a saved board first.", true);
+      return;
+    }
+    if (!window.confirm(`Delete “${name}”?`)) return;
+    try {
+      const saves = readSaves();
+      delete saves[name];
+      writeSaves(saves);
+      refreshFileList();
+      setFileStatus(`Deleted “${name}”.`);
+      haptic([18, 30, 18]);
+    } catch (_) {
+      setFileStatus("Unable to delete this save.", true);
+    }
+  }
+
+  function safeFileName(name) {
+    return (name || "tetraboard").replace(/[\\/:*?\"<>|]+/g, "-").trim() || "tetraboard";
+  }
+
+  function exportSelectedFile() {
+    const selected = selectedFileName();
+    const record = selected ? readSaves()[selected] : null;
+    const name = record?.name || document.getElementById("fileNameInput").value.trim() || "TetraBoard";
+    const payload = {
+      format: "tetraboard-lab-save",
+      version: 1,
+      name,
+      exportedAt: new Date().toISOString(),
+      state: record?.state || snapshotState()
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeFileName(name)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setFileStatus(`Exported “${name}”.`);
+    haptic();
+  }
+
+  async function importJsonFile(file) {
+    try {
+      const payload = JSON.parse(await file.text());
+      if (payload.format !== "tetraboard-lab-save" || payload.version !== 1) {
+        throw new Error("This is not a TetraBoard Lab save file.");
+      }
+      const importedState = normalizeSaveState(payload.state);
+      const fallbackName = file.name.replace(/\.json$/i, "") || "Imported board";
+      let name = String(payload.name || fallbackName).trim().slice(0, 48) || fallbackName;
+      const saves = readSaves();
+      if (saves[name]) {
+        let suffix = 2;
+        while (saves[`${name} ${suffix}`]) suffix++;
+        name = `${name} ${suffix}`;
+      }
+      saves[name] = { name, updatedAt: new Date().toISOString(), state: importedState };
+      writeSaves(saves);
+      document.getElementById("fileNameInput").value = name;
+      refreshFileList(name);
+      setFileStatus(`Imported “${name}”.`);
+      haptic();
+    } catch (error) {
+      setFileStatus(error.message || "Unable to import this JSON file.", true);
+    }
+  }
+
   function bindEvents() {
     const appShell = document.getElementById("appShell");
     for (const eventName of ["dragstart", "selectstart", "contextmenu"]) {
@@ -823,6 +1017,28 @@
     document.getElementById("clearBtn").addEventListener("click", clearLines);
     document.getElementById("resetBtn").addEventListener("click", resetBoard);
     document.getElementById("resetBagBtn").addEventListener("click", resetBag);
+    document.getElementById("fileBtn").addEventListener("click", openFileDialog);
+    document.getElementById("fileCloseBtn").addEventListener("click", closeFileDialog);
+    document.getElementById("fileSaveBtn").addEventListener("click", saveCurrentFile);
+    document.getElementById("fileLoadBtn").addEventListener("click", loadSelectedFile);
+    document.getElementById("fileDeleteBtn").addEventListener("click", deleteSelectedFile);
+    document.getElementById("fileExportBtn").addEventListener("click", exportSelectedFile);
+    document.getElementById("fileImportBtn").addEventListener("click", () => {
+      const input = document.getElementById("fileImportInput");
+      input.value = "";
+      input.click();
+    });
+    document.getElementById("fileImportInput").addEventListener("change", event => {
+      const file = event.target.files?.[0];
+      if (file) importJsonFile(file);
+    });
+    document.getElementById("fileList").addEventListener("change", event => {
+      document.getElementById("fileNameInput").value = event.target.value;
+      setFileStatus("");
+    });
+    document.getElementById("fileDialog").addEventListener("pointerdown", event => {
+      if (event.target === event.currentTarget) closeFileDialog();
+    });
     holdEl.addEventListener("pointerdown", event => {
       if (!event.isPrimary) return;
       event.preventDefault();
@@ -839,7 +1055,6 @@
   setupPalette();
   bindEvents();
   drawAll();
-  setupPasswordGate();
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
