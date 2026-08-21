@@ -1,9 +1,9 @@
-const CACHE_NAME = "tetraboard-lab-v42";
+const CACHE_NAME = "tetraboard-lab-v44";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=42",
-  "./app.js?v=42",
+  "./styles.css?v=44",
+  "./app.js?v=44",
   "./manifest.webmanifest",
   "./icons/icon-180.png",
   "./icons/icon-192.png",

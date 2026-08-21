@@ -14,11 +14,11 @@
   const TRAINER_SEARCH_NODE_LIMIT = 300000;
   const TRAINER_SEARCH_DEPTH = 20;
   const TRAINER_OPENING_PATTERNS = [
-    [[1, 1], [1, 2], [2, 2]],
-    [[1, 1], [2, 1], [3, 1]],
-    [[1, 1], [2, 1], [1, 2]],
-    [[1, 1], [1, 2], [1, 3]],
-    [[1, 1], [2, 1], [2, 2]]
+    { piece: 5, cells: [[1, 1], [1, 2], [2, 2], [0, 1]] },
+    { piece: 0, cells: [[1, 1], [2, 1], [3, 1], [0, 1]] },
+    { piece: 2, cells: [[1, 1], [2, 1], [1, 2], [0, 1]] },
+    { piece: 4, cells: [[1, 1], [1, 2], [1, 3], [0, 1]] },
+    { piece: 3, cells: [[1, 1], [2, 1], [2, 2], [0, 1]] }
   ];
   const COLORS = [
     "#27d7f2",
@@ -152,6 +152,7 @@
     trainerAutoClearEnabled: false,
     trainerAutoClearTimer: 0,
     trainerAutoClearKey: "",
+    trainerOutsideCells: [],
     trainerPieceStartSnapshot: null,
     undo: [],
     tool: "piece",
@@ -206,6 +207,7 @@
       trainerPreviewCount: state.trainerPreviewCount,
       trainerGhostEnabled: state.trainerGhostEnabled,
       trainerAutoClearEnabled: state.trainerAutoClearEnabled,
+      trainerOutsideCells: state.trainerOutsideCells.map(cell => ({ ...cell })),
       active: state.active ? { ...state.active } : null
     };
   }
@@ -232,6 +234,9 @@
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
     state.holdPiece = Number.isInteger(snapshot.holdPiece) ? snapshot.holdPiece : null;
     state.holdLocked = Boolean(snapshot.holdLocked);
+    state.trainerOutsideCells = Array.isArray(snapshot.trainerOutsideCells)
+      ? snapshot.trainerOutsideCells.map(cell => ({ ...cell }))
+      : [];
     if (state.mode === "fourColumnCombo") {
       state.trainerQueue = Array.isArray(snapshot.trainerQueue) ? snapshot.trainerQueue.slice() : [];
       state.trainerBag = Array.isArray(snapshot.trainerBag) ? snapshot.trainerBag.slice() : [];
@@ -263,7 +268,8 @@
       && snapshot.holdPiece === state.holdPiece
       && Boolean(snapshot.holdLocked) === state.holdLocked
       && JSON.stringify(snapshot.trainerQueue || []) === JSON.stringify(state.trainerQueue)
-      && JSON.stringify(snapshot.trainerBag || []) === JSON.stringify(state.trainerBag);
+      && JSON.stringify(snapshot.trainerBag || []) === JSON.stringify(state.trainerBag)
+      && JSON.stringify(snapshot.trainerOutsideCells || []) === JSON.stringify(state.trainerOutsideCells);
   }
 
   function boardMetrics() {
@@ -927,7 +933,14 @@
 
   function applyRandomTrainerOpening() {
     const pattern = TRAINER_OPENING_PATTERNS[Math.floor(Math.random() * TRAINER_OPENING_PATTERNS.length)];
-    for (const [x, y] of pattern) state.board[ROWS - y][x - 1] = 7;
+    state.trainerOutsideCells = [];
+    for (const [x, y] of pattern.cells) {
+      if (x >= 1 && x <= FOUR_COLUMN_COMBO_COLS && y >= 1 && y <= ROWS) {
+        state.board[ROWS - y][x - 1] = pattern.piece;
+      } else {
+        state.trainerOutsideCells.push({ x, y, piece: pattern.piece });
+      }
+    }
   }
 
   function resetTrainer() {
@@ -942,6 +955,7 @@
     state.trainerLines = 0;
     state.holdPiece = null;
     state.holdLocked = false;
+    state.trainerOutsideCells = [];
     state.trainerPieceStartSnapshot = null;
     state.undo = [];
     applyRandomTrainerOpening();
@@ -1003,8 +1017,10 @@
     }
     pushSnapshotUndo(state.trainerPieceStartSnapshot);
     const merged = mergePlacement(state.board, state.active, state.active.piece);
+    const clearedOpeningRow = merged[ROWS - 1].every(cell => cell !== EMPTY);
     const result = clearFullLinesFrom(merged, FOUR_COLUMN_COMBO_COLS);
     state.board = result.board;
+    if (clearedOpeningRow) state.trainerOutsideCells = [];
     state.groups = makeBoard(FOUR_COLUMN_COMBO_COLS, 0);
     state.trainerCombo = result.cleared > 0 ? state.trainerCombo + 1 : 0;
     state.trainerLines += result.cleared;
@@ -1139,6 +1155,19 @@
         if (value !== EMPTY) {
           drawCell(ctx, ox + x * cell, y * cell, cell, PAINT_COLORS[value] || PAINT_COLORS[7], false);
         }
+      }
+    }
+
+    if (state.mode === "fourColumnCombo") {
+      for (const outside of state.trainerOutsideCells) {
+        drawCell(
+          ctx,
+          ox + (outside.x - 1) * cell,
+          (ROWS - outside.y) * cell,
+          cell,
+          PAINT_COLORS[outside.piece],
+          false
+        );
       }
     }
 
@@ -1593,6 +1622,12 @@
       normalized.trainerPreviewCount = value.trainerPreviewCount === 3 ? 3 : 5;
       normalized.trainerGhostEnabled = value.trainerGhostEnabled !== false;
       normalized.trainerAutoClearEnabled = Boolean(value.trainerAutoClearEnabled);
+      normalized.trainerOutsideCells = Array.isArray(value.trainerOutsideCells)
+        ? value.trainerOutsideCells.filter(cell => cell
+          && Number.isInteger(cell.x) && Number.isInteger(cell.y)
+          && Number.isInteger(cell.piece) && cell.piece >= 0 && cell.piece < 7)
+          .map(cell => ({ x: cell.x, y: cell.y, piece: cell.piece }))
+        : [];
     }
 
     return normalized;
@@ -1960,7 +1995,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=42", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=44", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
