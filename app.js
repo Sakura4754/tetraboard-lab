@@ -163,7 +163,7 @@
 
   const placementCache = new Map();
   let lastInteractionHapticAt = -Infinity;
-  let lastBoardTouchEndAt = -Infinity;
+  let lastTouchEnd = null;
 
   function haptic(duration = 14) {
     if (navigator.vibrate) {
@@ -1925,12 +1925,22 @@
     boardCanvas.addEventListener("pointercancel", () => {
       state.pointer = null;
     });
-    boardCanvas.addEventListener("touchend", event => {
+    document.addEventListener("touchend", event => {
+      const touch = event.changedTouches[0];
+      if (!touch) return;
       const now = performance.now();
-      if (now - lastBoardTouchEndAt < 360) event.preventDefault();
-      lastBoardTouchEndAt = now;
-    }, { passive: false });
-    boardCanvas.addEventListener("dblclick", event => event.preventDefault());
+      const target = event.target.closest?.("button, canvas, input, .hold-slot") || event.target;
+      const isDoubleTap = lastTouchEnd
+        && now - lastTouchEnd.at < 360
+        && target === lastTouchEnd.target
+        && Math.hypot(touch.clientX - lastTouchEnd.x, touch.clientY - lastTouchEnd.y) < 32;
+      if (isDoubleTap) event.preventDefault();
+      lastTouchEnd = { at: now, x: touch.clientX, y: touch.clientY, target };
+    }, { passive: false, capture: true });
+    document.addEventListener("dblclick", event => event.preventDefault(), { capture: true });
+    document.addEventListener("gesturestart", event => event.preventDefault(), { passive: false });
+    document.addEventListener("gesturechange", event => event.preventDefault(), { passive: false });
+    document.addEventListener("gestureend", event => event.preventDefault(), { passive: false });
     document.getElementById("undoBtn").addEventListener("click", () => {
       if (state.mode === "fourColumnCombo") {
         undoFourColumnCombo();
@@ -1995,7 +2005,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=44", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=45", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
