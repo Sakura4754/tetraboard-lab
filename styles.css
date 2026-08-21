@@ -97,10 +97,19 @@ button {
 }
 
 .top-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+
+.title-area {
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
 }
 
 .top-actions {
@@ -382,10 +391,9 @@ h1 span {
 .app-shell.four-column-combo-mode .piece-panel {
   display: grid;
   grid-template-rows:
-    minmax(0, 5fr)
+    minmax(0, 1fr)
     44px
-    44px
-    176px;
+    44px;
   gap: 6px;
   align-content: start;
 }
@@ -428,11 +436,11 @@ h1 span {
 
 .trainer-switches {
   width: 100%;
-  height: 100%;
+  height: 32px;
   min-height: 0;
   display: grid;
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .trainer-switches[hidden] {
@@ -442,15 +450,15 @@ h1 span {
 .trainer-switches button {
   min-width: 0;
   min-height: 0;
-  padding: 3px;
+  padding: 2px;
   border-radius: 7px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: linear-gradient(180deg, rgba(49, 58, 72, 0.92), rgba(16, 23, 34, 0.96));
   color: #dcefff;
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1;
   font-weight: 950;
-  text-align: left;
+  text-align: center;
 }
 
 .trainer-switches button.active {
@@ -461,9 +469,9 @@ h1 span {
 
 .switch-button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(26px, 0.76fr);
+  grid-template-columns: minmax(0, 1fr) 25px;
   align-items: stretch;
-  gap: 3px;
+  gap: 2px;
 }
 
 .switch-button span,
@@ -483,7 +491,7 @@ h1 span {
 .switch-button strong {
   color: #11150d;
   background: linear-gradient(180deg, #ffd85f, #c97920);
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .switch-button:not(.active) strong {

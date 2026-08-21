@@ -1950,7 +1950,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=40", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=41", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
