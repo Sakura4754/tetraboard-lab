@@ -13,6 +13,13 @@
   const TRAINER_SEARCH_BRANCH_LIMIT = 12;
   const TRAINER_SEARCH_NODE_LIMIT = 300000;
   const TRAINER_SEARCH_DEPTH = 20;
+  const TRAINER_OPENING_PATTERNS = [
+    [[1, 1], [1, 2], [2, 2]],
+    [[1, 1], [2, 1], [3, 1]],
+    [[1, 1], [2, 1], [1, 2]],
+    [[1, 1], [1, 2], [1, 3]],
+    [[1, 1], [2, 1], [2, 2]]
+  ];
   const COLORS = [
     "#27d7f2",
     "#ffd938",
@@ -918,6 +925,11 @@
     return suggestions;
   }
 
+  function applyRandomTrainerOpening() {
+    const pattern = TRAINER_OPENING_PATTERNS[Math.floor(Math.random() * TRAINER_OPENING_PATTERNS.length)];
+    for (const [x, y] of pattern) state.board[ROWS - y][x - 1] = 7;
+  }
+
   function resetTrainer() {
     cancelTrainerAutoClear();
     state.board = makeBoard(FOUR_COLUMN_COMBO_COLS);
@@ -932,9 +944,7 @@
     state.holdLocked = false;
     state.trainerPieceStartSnapshot = null;
     state.undo = [];
-    state.board[ROWS - 1][0] = 7;
-    state.board[ROWS - 2][0] = 7;
-    state.board[ROWS - 2][1] = 7;
+    applyRandomTrainerOpening();
     for (let attempt = 0; attempt < 20; attempt++) {
       const suggestions = seedTrainerOpening();
       if (suggestions[0]?.keepsPreviewCombo) break;
@@ -1950,7 +1960,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=41", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=42", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
