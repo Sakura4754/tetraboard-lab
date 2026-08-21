@@ -6,6 +6,7 @@
   --left-rail: clamp(54px, 15vw, 64px);
   --right-rail: 72px;
   --rail-gap: 4px;
+  --board-cols: 10;
   --board-width: min(
     calc(var(--app-width) - 16px - var(--left-rail) - var(--right-rail) - var(--rail-gap) * 2),
     calc((100dvh - 158px) / 2)
@@ -83,6 +84,12 @@ button {
   box-shadow: 0 0 36px rgba(0, 0, 0, 0.4);
 }
 
+.app-shell.four-column-combo-mode {
+  --left-rail: clamp(54px, 15vw, 64px);
+  --right-rail: 72px;
+  --board-cols: 10;
+}
+
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .app-shell {
     max-height: none;
@@ -133,7 +140,7 @@ h1 span {
 
 .palette-panel,
 .piece-panel {
-  height: calc(var(--board-width) * 2);
+  height: calc(var(--board-width) * 20 / var(--board-cols));
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -145,7 +152,7 @@ h1 span {
   --hold-height: 64px;
   --swatch-size: min(
     46px,
-    calc((var(--board-width) * 2 - var(--hold-height) - 37px) / 9)
+    calc((var(--board-width) * 20 / var(--board-cols) - var(--hold-height) - 37px) / 9)
   );
   gap: 5px;
 }
@@ -158,7 +165,7 @@ h1 span {
 
 .board {
   width: var(--board-width);
-  height: calc(var(--board-width) * 2);
+  height: calc(var(--board-width) * 20 / var(--board-cols));
   border: 2px solid #6f86a8;
   border-radius: 7px;
   background: #1a2434;
@@ -280,6 +287,10 @@ h1 span {
   gap: 4px;
 }
 
+.piece-panel {
+  min-height: 0;
+}
+
 .piece-tile {
   width: 100%;
   min-height: 0;
@@ -318,7 +329,7 @@ h1 span {
 
 .action-bar {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -327,10 +338,208 @@ h1 span {
   min-height: 0;
   height: 100%;
   padding: 0 4px;
-  font-size: clamp(11px, 3vw, 14px);
+  font-size: clamp(10px, 2.6vw, 13px);
 }
 
-.file-dialog[hidden] {
+#fourColumnComboBtn.active {
+  background: linear-gradient(180deg, #ffd85f, #c97920);
+  color: #15110a;
+}
+
+.app-shell.four-column-combo-mode .palette-panel {
+  justify-content: flex-start;
+  padding-top: 0;
+}
+
+.app-shell.four-column-combo-mode .workspace {
+  grid-template-columns: var(--left-rail) var(--board-width) var(--right-rail);
+}
+
+.app-shell.four-column-combo-mode .palette {
+  display: none;
+}
+
+.app-shell.four-column-combo-mode .hold-slot {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-shell.four-column-combo-mode .board {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell.four-column-combo-mode .piece-tray {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.app-shell.four-column-combo-mode .piece-panel {
+  display: grid;
+  grid-template-rows:
+    minmax(0, 5fr)
+    44px
+    44px
+    176px;
+  gap: 6px;
+  align-content: start;
+}
+
+.combo-box {
+  width: 100%;
+  min-height: 0;
+  border: 1px solid rgba(255, 216, 95, 0.36);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(48, 58, 73, 0.78), rgba(11, 17, 28, 0.86));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 6px 14px rgba(0, 0, 0, 0.18);
+  display: grid;
+  place-items: center;
+  padding: 4px 2px;
+  text-align: center;
+}
+
+.combo-box[hidden] {
+  display: none;
+}
+
+.combo-box span {
+  color: #8bd7ff;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.combo-box strong {
+  color: #ffd85f;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.lines-box {
+  border-color: rgba(139, 215, 255, 0.36);
+}
+
+.trainer-switches {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.trainer-switches[hidden] {
+  display: none;
+}
+
+.trainer-switches button {
+  min-width: 0;
+  min-height: 0;
+  padding: 3px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(49, 58, 72, 0.92), rgba(16, 23, 34, 0.96));
+  color: #dcefff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 950;
+  text-align: left;
+}
+
+.trainer-switches button.active {
+  color: #dcefff;
+  background: linear-gradient(180deg, rgba(55, 66, 82, 0.96), rgba(18, 26, 38, 0.98));
+  border-color: rgba(255, 238, 168, 0.75);
+}
+
+.switch-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(26px, 0.76fr);
+  align-items: stretch;
+  gap: 3px;
+}
+
+.switch-button span,
+.switch-button strong {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  line-height: 1;
+}
+
+.switch-button span {
+  color: #a8bed9;
+  background: rgba(4, 7, 12, 0.22);
+}
+
+.switch-button strong {
+  color: #11150d;
+  background: linear-gradient(180deg, #ffd85f, #c97920);
+  font-size: 13px;
+}
+
+.switch-button:not(.active) strong {
+  color: #dcefff;
+  background: linear-gradient(180deg, #3b4657, #182131);
+}
+
+.trainer-preview-tile {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(8, 11, 17, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 3px;
+  color: #dcefff;
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.trainer-preview-tile span {
+  flex: 0 0 10px;
+  color: #8bd7ff;
+  font-size: 9px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.trainer-preview-tile canvas {
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.trainer-preview-tile strong {
+  color: #ffd85f;
+  font-size: 14px;
+}
+
+.trainer-preview-spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.file-dialog[hidden],
+.file-dialog:not(.is-open) {
   display: none;
 }
 

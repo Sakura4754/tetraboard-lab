@@ -14,7 +14,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
-  <link rel="stylesheet" href="./styles.css?v=13">
+  <link rel="stylesheet" href="./styles.css?v=38">
 </head>
 <body>
   <main id="appShell" class="app-shell">
@@ -41,19 +41,42 @@
 
       <aside class="piece-panel" aria-label="Piece tray">
         <div id="pieceTray" class="piece-tray"></div>
+        <div id="comboBox" class="combo-box" aria-live="polite" hidden>
+          <span>Combo</span>
+          <strong>0</strong>
+        </div>
+        <div id="linesBox" class="combo-box lines-box" aria-live="polite" hidden>
+          <span>Lines</span>
+          <strong>0</strong>
+        </div>
+        <div id="trainerSwitches" class="trainer-switches" hidden>
+          <button id="previewToggleBtn" class="switch-button" type="button" aria-pressed="true">
+            <span>Preview</span>
+            <strong>5</strong>
+          </button>
+          <button id="ghostToggleBtn" class="switch-button" type="button" aria-pressed="true">
+            <span>Ghost</span>
+            <strong>On</strong>
+          </button>
+          <button id="autoClearToggleBtn" class="switch-button" type="button" aria-pressed="false">
+            <span>Auto</span>
+            <strong>Off</strong>
+          </button>
+        </div>
       </aside>
     </section>
 
     <nav class="action-bar" aria-label="Actions">
       <button class="tool" data-tool="draw" type="button">Draw</button>
       <button class="tool active" data-tool="piece" type="button">Piece</button>
+      <button id="fourColumnComboBtn" type="button">4 Wide</button>
       <button id="clearBtn" type="button">Clear Lines</button>
       <button id="undoBtn" type="button">Undo</button>
       <button id="fileBtn" type="button">File</button>
     </nav>
   </main>
 
-  <div id="fileDialog" class="file-dialog" role="dialog" aria-modal="true" aria-labelledby="fileDialogTitle" hidden>
+  <div id="fileDialog" class="file-dialog" role="dialog" aria-modal="true" aria-labelledby="fileDialogTitle" hidden style="display: none;">
     <section class="file-panel">
       <header class="file-header">
         <h2 id="fileDialogTitle">File</h2>
@@ -80,6 +103,6 @@
     </section>
   </div>
 
-  <script src="./app.js?v=13"></script>
+  <script src="./app.js?v=38"></script>
 </body>
 </html>
