@@ -10,46 +10,9 @@
   const PIECES = ["I", "O", "T", "L", "J", "S", "Z"];
   const PIECE_CHARS = ["i", "o", "t", "l", "j", "s", "z"];
   const PIECE_FROM_CHAR = { i: 0, o: 1, t: 2, l: 3, j: 4, s: 5, z: 6 };
-  const TRAINER_PREVIEW_COUNT = 14;
-  const FOUR_COLUMN_COMBO_PATTERN_STRINGS = [
-    "    \n    \n    \n111 \n",
-    "    \n    \n    \n 111\n",
-    "    \n    \n1   \n11  \n",
-    "    \n    \n   1\n  11\n",
-    "    \n    \n11  \n1   \n",
-    "    \n    \n  11\n   1\n",
-    "    \n1   \n1   \n1   \n",
-    "    \n   1\n   1\n   1\n",
-    "    \n    \n11  \n 1  \n",
-    "    \n    \n  11\n  1 \n",
-    "    \n    \n 1  \n11  \n",
-    "    \n    \n  1 \n  11\n",
-    "    \n    \n    \n11 1\n",
-    "    \n    \n    \n1 11\n",
-    "    \n    \n1   \n1 1 \n",
-    "    \n    \n   1\n 1 1\n",
-    "    \n    \n1   \n1  1\n",
-    "    \n    \n   1\n1  1\n",
-    "    \n    \n 1  \n1  1\n",
-    "    \n    \n  1 \n1  1\n",
-    "    \n    \n   1\n11  \n",
-    "    \n    \n1   \n  11\n",
-    "    \n    \n   1\n 11 \n",
-    "    \n    \n1   \n 11 \n",
-    "    \n    \n   1\n1 1 \n",
-    "    \n    \n1   \n 1 1\n",
-    "    \n    \n 11 \n1   \n",
-    "    \n    \n 11 \n   1\n"
-  ];
-  const FOUR_COLUMN_COMBO_ROTATION_STATES = {
-    0: [0, 1],
-    1: [0],
-    2: [0, 1, 2, 3],
-    3: [0, 1, 2, 3],
-    4: [0, 1, 2, 3],
-    5: [0, 1],
-    6: [0, 1]
-  };
+  const TRAINER_SEARCH_BRANCH_LIMIT = 12;
+  const TRAINER_SEARCH_NODE_LIMIT = 300000;
+  const TRAINER_SEARCH_DEPTH = 20;
   const COLORS = [
     "#27d7f2",
     "#ffd938",
@@ -191,7 +154,6 @@
   };
 
   const placementCache = new Map();
-  let fourColumnComboPatternTable = null;
   let lastInteractionHapticAt = -Infinity;
   let lastBoardTouchEndAt = -Infinity;
 
@@ -616,225 +578,51 @@
     return board.map(row => row.map(cell => cell === EMPTY ? "." : "#").join("")).join("/");
   }
 
-  function miniFromPatternString(value) {
-    return value.split("\n").slice(0, 4).map(row => row.padEnd(FOUR_COLUMN_COMBO_COLS, " ").slice(0, FOUR_COLUMN_COMBO_COLS).split("").map(cell => cell === " " ? EMPTY : 7));
-  }
+  function measureBoard(board, cols) {
+    const heights = Array(cols).fill(0);
+    let holes = 0;
+    let occupied = 0;
 
-  function patternStringFromMini(mini) {
-    return mini.map(row => row.map(cell => cell === EMPTY ? " " : "1").join("")).join("\n") + "\n";
-  }
-
-  function patternStartRow(board) {
-    let first = -1;
-    for (let y = 0; y < ROWS; y++) {
-      if (board[y].some(cell => cell !== EMPTY)) {
-        first = y;
-        break;
-      }
-    }
-    return Math.min(first < 0 ? ROWS - 4 : first, ROWS - 4);
-  }
-
-  function patternStringFromBoard(board) {
-    const start = patternStartRow(board);
-    return board.slice(start, start + 4).map(row => row.map(cell => cell === EMPTY ? " " : "1").join("")).join("\n") + "\n";
-  }
-
-  function isMiniPlacementValid(piece, mini) {
-    return cellsForPlacement(piece).every(([x, y]) => x >= 0 && x < FOUR_COLUMN_COMBO_COLS && y >= 0 && y < 4 && mini[y][x] === EMPTY);
-  }
-
-  function miniFallToBottom(piece, mini) {
-    let landing = { ...piece };
-    if (!isMiniPlacementValid(landing, mini)) return null;
-    while (isMiniPlacementValid({ ...landing, y: landing.y + 1 }, mini)) landing.y++;
-    return landing;
-  }
-
-  function mergeMiniPlacement(mini, piece) {
-    const next = mini.map(row => row.slice());
-    for (const [x, y] of cellsForPlacement(piece)) {
-      if (y >= 0 && y < 4 && x >= 0 && x < FOUR_COLUMN_COMBO_COLS) next[y][x] = piece.piece;
-    }
-    return next;
-  }
-
-  function clearFullMiniLines(mini) {
-    const kept = mini.filter(row => row.some(cell => cell === EMPTY));
-    const cleared = 4 - kept.length;
-    while (kept.length < 4) kept.unshift(Array(FOUR_COLUMN_COMBO_COLS).fill(EMPTY));
-    return { mini: kept, cleared };
-  }
-
-  function fourColumnComboPlacementsForPattern(mini, patternString, pieceIndex, patternSet) {
-    const placements = [];
-    const seenOrigins = new Set();
-    for (const rotation of FOUR_COLUMN_COMBO_ROTATION_STATES[pieceIndex]) {
-      for (let x = -2; x < FOUR_COLUMN_COMBO_COLS; x++) {
-        for (let y = -1; y < 4; y++) {
-          if (pieceIndex === 4 && rotation === 3 && x === 0 && y === 1 && patternString === "    \n    \n1   \n  11\n") continue;
-          if (pieceIndex === 3 && rotation === 1 && x === 1 && y === 1 && patternString === "    \n    \n   1\n11  \n") continue;
-
-          const start = { piece: pieceIndex, rotation, x, y };
-          if (!isMiniPlacementValid(start, mini)) continue;
-          const landing = miniFallToBottom(start, mini);
-          if (!landing) continue;
-          const originKey = `${landing.x},${landing.y}`;
-          if (seenOrigins.has(originKey)) continue;
-          seenOrigins.add(originKey);
-
-          const merged = mergeMiniPlacement(mini, landing);
-          const result = clearFullMiniLines(merged);
-          if (result.cleared <= 0) continue;
-          const nextPattern = patternStringFromMini(result.mini);
-          if (!patternSet.has(nextPattern)) continue;
-          placements.push({
-            piece: landing,
-            nextPattern,
-            cleared: result.cleared,
-            branchingScore: 0,
-            nextPieces: []
-          });
-        }
-      }
-    }
-    return placements;
-  }
-
-  function buildFourColumnComboPatternTable() {
-    if (fourColumnComboPatternTable) return fourColumnComboPatternTable;
-
-    const patternSet = new Set(FOUR_COLUMN_COMBO_PATTERN_STRINGS);
-    const table = {};
-    for (const pattern of FOUR_COLUMN_COMBO_PATTERN_STRINGS) {
-      const mini = miniFromPatternString(pattern);
-      const placements = {};
-      const piecesWithPlacements = {};
-      for (let piece = 0; piece < 7; piece++) {
-        const piecePlacements = fourColumnComboPlacementsForPattern(mini, pattern, piece, patternSet);
-        placements[piece] = piecePlacements;
-        if (piecePlacements.length > 0) piecesWithPlacements[piece] = true;
-      }
-      table[pattern] = { mini, placements, piecesWithPlacements };
-    }
-
-    for (const entry of Object.values(table)) {
-      for (const piecePlacements of Object.values(entry.placements)) {
-        for (const placement of piecePlacements) {
-          const nextEntry = table[placement.nextPattern];
-          placement.nextPieces = Object.keys(nextEntry.piecesWithPlacements).map(Number).sort((a, b) => a - b);
-          placement.branchingScore = placement.nextPieces.length;
+    for (let x = 0; x < cols; x++) {
+      let foundBlock = false;
+      for (let y = 0; y < ROWS; y++) {
+        if (board[y][x] !== EMPTY) {
+          if (!foundBlock) heights[x] = ROWS - y;
+          foundBlock = true;
+          occupied++;
+        } else if (foundBlock) {
+          holes++;
         }
       }
     }
 
-    fourColumnComboPatternTable = table;
-    return table;
+    let bumpiness = 0;
+    for (let x = 1; x < cols; x++) bumpiness += Math.abs(heights[x] - heights[x - 1]);
+    return {
+      heights,
+      holes,
+      occupied,
+      aggregateHeight: heights.reduce((sum, height) => sum + height, 0),
+      maxHeight: Math.max(0, ...heights),
+      bumpiness
+    };
   }
 
-  function scoreFourColumnComboContinuations(pattern, previews, holdPiece, memo = new Map()) {
-    const table = buildFourColumnComboPatternTable();
-    if (!table[pattern]) return 0;
-
-    let queue = previews.slice();
-    let hold = Number.isInteger(holdPiece) ? holdPiece : null;
-    if (queue.length === 0) {
-      if (!Number.isInteger(hold)) return 0;
-      queue.push(hold);
-      hold = null;
-    }
-
-    const key = `${pattern}|${queue.join(",")}|h${hold ?? "n"}`;
-    if (memo.has(key)) return memo.get(key);
-
-    const directPiece = queue[0];
-    const directPlacements = table[pattern].placements[directPiece] || [];
-    const direct = 1 + Math.max(0, ...directPlacements.map(placement =>
-      scoreFourColumnComboContinuations(placement.nextPattern, queue.slice(1), hold, memo)
-    ));
-
-    let holdCandidate = hold;
-    const holdQueue = queue.slice();
-    if (!Number.isInteger(holdCandidate)) {
-      holdCandidate = holdQueue.length > 1 ? holdQueue.splice(1, 1)[0] : null;
-    }
-
-    let holdScore = 0;
-    if (Number.isInteger(holdCandidate)) {
-      const holdPlacements = table[pattern].placements[holdCandidate] || [];
-      holdScore = 1 + Math.max(0, ...holdPlacements.map(placement =>
-        scoreFourColumnComboContinuations(placement.nextPattern, holdQueue.slice(1), directPiece, memo)
-      ));
-    }
-
-    const score = Math.max(direct, holdScore);
-    memo.set(key, score);
-    return score;
+  function boardSurvivalScore(board, cols) {
+    const metrics = measureBoard(board, cols);
+    const accepts = acceptablePieceCount(board, cols);
+    return accepts * 1800
+      - metrics.holes * 4200
+      - metrics.maxHeight * 180
+      - metrics.aggregateHeight * 24
+      - metrics.bumpiness * 95
+      - metrics.occupied * 8;
   }
 
-  function fullBoardAfterPatternPlacement(board, placement, startRow) {
-    const actual = { ...placement.piece, y: placement.piece.y + startRow };
-    const merged = mergePlacement(board, actual, actual.piece);
-    return clearFullLinesFrom(merged, FOUR_COLUMN_COMBO_COLS).board;
-  }
-
-  function fourColumnComboCandidatesFor(pattern, board, startRow, activePiece, holdPiece, holdAvailable, previews) {
-    const table = buildFourColumnComboPatternTable();
-    const entry = table[pattern];
-    if (!entry) return [];
-
-    const candidates = [];
-    const requiredScore = TRAINER_PREVIEW_COUNT + (Number.isInteger(holdPiece) ? 1 : 0);
-    const currentPlacements = entry.placements[activePiece] || [];
-    for (const placement of currentPlacements) {
-      const continuationScore = scoreFourColumnComboContinuations(placement.nextPattern, previews, holdPiece);
-      candidates.push({
-        piece: { ...placement.piece, y: placement.piece.y + startRow },
-        board: fullBoardAfterPatternPlacement(board, placement, startRow),
-        cleared: placement.cleared,
-        source: "current",
-        continuations: continuationScore,
-        accepts: placement.branchingScore,
-        height: surfaceHeight(board),
-        keepsPreviewCombo: continuationScore >= requiredScore,
-        score: continuationScore * 10_000 + placement.branchingScore,
-        nextPieces: placement.nextPieces.slice()
-      });
-    }
-
-    if (holdAvailable && holdPiece !== activePiece) {
-      let candidatePiece = holdPiece;
-      let continuationQueue = previews;
-      if (!Number.isInteger(candidatePiece)) {
-        candidatePiece = previews[0];
-        continuationQueue = previews.slice(1);
-      }
-      if (Number.isInteger(candidatePiece)) {
-        const holdPlacements = entry.placements[candidatePiece] || [];
-        for (const placement of holdPlacements) {
-          const continuationScore = scoreFourColumnComboContinuations(placement.nextPattern, continuationQueue, activePiece);
-          candidates.push({
-            piece: { ...placement.piece, y: placement.piece.y + startRow },
-            board: fullBoardAfterPatternPlacement(board, placement, startRow),
-            cleared: placement.cleared,
-            source: "hold",
-            continuations: continuationScore,
-            accepts: placement.branchingScore,
-            height: surfaceHeight(board),
-            keepsPreviewCombo: continuationScore >= requiredScore,
-            score: continuationScore * 10_000 + placement.branchingScore,
-            nextPieces: placement.nextPieces.slice()
-          });
-        }
-      }
-    }
-
-    candidates.sort((a, b) =>
-      b.continuations - a.continuations
-      || b.accepts - a.accepts
-      || (a.source === "current" ? -1 : 1)
-    );
-    return candidates;
+  function compareSearchValue(a, b) {
+    return a.depth - b.depth
+      || a.resilience - b.resilience
+      || a.quality - b.quality;
   }
 
   function nextStatesAfterPlacement(placement, current, hold, queue, usedHold) {
@@ -867,34 +655,71 @@
     };
   }
 
-  function continuationDepthWithHold(board, current, hold, queue, holdAvailable, depthLimit, cols, memo) {
-    if (depthLimit <= 0 || !Number.isInteger(current)) return 0;
+  function comboSearchActions(board, current, hold, queue, cols) {
+    if (!Number.isInteger(current)) return [];
+    const actions = enumerateComboPlacements(board, current, cols).map(placement => ({
+      placement,
+      source: "current",
+      next: nextStatesAfterPlacement(placement, current, hold, queue, false)
+    }));
 
-    const key = `${boardKey(board)}|c${current}|h${hold ?? "n"}|a${holdAvailable ? 1 : 0}|q${queue.slice(0, depthLimit + 2).join("")}|d${depthLimit}`;
-    if (memo.has(key)) return memo.get(key);
+    const swappedPiece = hold === null ? queue[0] : hold;
+    if (Number.isInteger(swappedPiece) && swappedPiece !== current) {
+      for (const placement of enumerateComboPlacements(board, swappedPiece, cols)) {
+        actions.push({
+          placement,
+          source: "hold",
+          next: nextStatesAfterPlacement(placement, current, hold, queue, true)
+        });
+      }
+    }
+    return actions;
+  }
 
-    let best = 0;
-    const directPlacements = enumerateComboPlacements(board, current, cols);
-    for (const placement of directPlacements) {
-      const next = nextStatesAfterPlacement(placement, current, hold, queue, false);
-      best = Math.max(
-        best,
-        1 + continuationDepthWithHold(next.board, next.current, next.hold, next.queue, next.holdAvailable, depthLimit - 1, cols, memo)
-      );
+  function rankComboSearchActions(actions, cols) {
+    return actions
+      .map(action => ({ ...action, localScore: boardSurvivalScore(action.next.board, cols) }))
+      .sort((a, b) => b.localScore - a.localScore || b.placement.cleared - a.placement.cleared)
+      .slice(0, TRAINER_SEARCH_BRANCH_LIMIT);
+  }
+
+  function searchComboContinuation(board, current, hold, queue, depthLimit, cols, memo, budget) {
+    if (depthLimit <= 0 || !Number.isInteger(current)) {
+      return { depth: 0, resilience: acceptablePieceCount(board, cols), quality: boardSurvivalScore(board, cols) };
+    }
+    if (budget.nodes >= TRAINER_SEARCH_NODE_LIMIT) {
+      return { depth: 0, resilience: 0, quality: boardSurvivalScore(board, cols) };
     }
 
-    if (holdAvailable) {
-      const holdPiece = hold === null ? queue[0] : hold;
-      if (Number.isInteger(holdPiece)) {
-        const holdPlacements = enumerateComboPlacements(board, holdPiece, cols);
-        for (const placement of holdPlacements) {
-          const next = nextStatesAfterPlacement(placement, current, hold, queue, true);
-          best = Math.max(
-            best,
-            1 + continuationDepthWithHold(next.board, next.current, next.hold, next.queue, next.holdAvailable, depthLimit - 1, cols, memo)
-          );
-        }
-      }
+    const key = `${boardKey(board)}|c${current}|h${hold ?? "n"}|q${queue.slice(0, depthLimit + 1).join("")}|d${depthLimit}`;
+    if (memo.has(key)) return memo.get(key);
+    budget.nodes++;
+
+    const actions = rankComboSearchActions(comboSearchActions(board, current, hold, queue, cols), cols);
+    if (actions.length === 0) {
+      const stopped = { depth: 0, resilience: 0, quality: boardSurvivalScore(board, cols) };
+      memo.set(key, stopped);
+      return stopped;
+    }
+
+    let best = null;
+    for (const action of actions) {
+      const child = searchComboContinuation(
+        action.next.board,
+        action.next.current,
+        action.next.hold,
+        action.next.queue,
+        depthLimit - 1,
+        cols,
+        memo,
+        budget
+      );
+      const candidate = {
+        depth: 1 + child.depth,
+        resilience: acceptablePieceCount(action.next.board, cols) + child.resilience,
+        quality: action.localScore + child.quality * 0.55
+      };
+      if (!best || compareSearchValue(candidate, best) > 0) best = candidate;
     }
 
     memo.set(key, best);
@@ -916,57 +741,51 @@
     }
   }
 
-  function scoreTrainerCandidate(item, continuationState, lookaheadDepth, cols, source) {
-    const continuations = continuationDepthWithHold(
+  function scoreTrainerCandidate(item, continuationState, lookaheadDepth, cols, source, memo, budget) {
+    const future = searchComboContinuation(
       item.board,
       continuationState.current,
       continuationState.hold,
       continuationState.queue,
-      true,
       lookaheadDepth,
       cols,
-      new Map()
+      memo,
+      budget
     );
     const accepts = acceptablePieceCount(item.board, cols);
     const height = surfaceHeight(item.board);
-    const keepsPreviewCombo = continuations >= lookaheadDepth;
+    const keepsPreviewCombo = future.depth >= lookaheadDepth;
     const score = (keepsPreviewCombo ? 1_000_000 : 0)
-      + continuations * 10_000
-      + accepts * 500
-      + item.cleared * 120
-      - height * 15
-      - item.piece.y
+      + future.depth * 100_000
+      + future.resilience * 1_000
+      + future.quality
+      + accepts * 250
+      + item.cleared * 80
       - (source === "hold" ? 1 : 0);
-    return { ...item, source, continuations, accepts, height, keepsPreviewCombo, score };
+    return {
+      ...item,
+      source,
+      continuations: future.depth,
+      accepts,
+      height,
+      keepsPreviewCombo,
+      score
+    };
   }
 
   function analyzeTrainer() {
     if (state.mode !== "fourColumnCombo" || !state.active) return [];
     fillTrainerQueue();
     const cols = FOUR_COLUMN_COMBO_COLS;
-    const pattern = patternStringFromBoard(state.board);
-    const startRow = patternStartRow(state.board);
-    const patternCandidates = fourColumnComboCandidatesFor(
-      pattern,
-      state.board,
-      startRow,
-      state.active.piece,
-      state.holdPiece,
-      !state.holdLocked,
-      state.trainerQueue.slice(0, TRAINER_PREVIEW_COUNT)
-    );
-    if (patternCandidates.length > 0) {
-      state.trainerSuggestions = patternCandidates;
-      return patternCandidates;
-    }
-
-    const lookaheadDepth = Math.min(14, state.trainerQueue.length);
+    const lookaheadDepth = Math.min(TRAINER_SEARCH_DEPTH, state.trainerQueue.length);
+    const memo = new Map();
+    const budget = { nodes: 0 };
     const candidates = enumerateComboPlacements(state.board, state.active.piece, cols)
       .map(item => scoreTrainerCandidate(item, {
         current: state.trainerQueue[0],
         hold: state.holdPiece,
         queue: state.trainerQueue.slice(1)
-      }, lookaheadDepth, cols, "current"));
+      }, lookaheadDepth, cols, "current", memo, budget));
 
     if (!state.holdLocked) {
       const holdPiece = state.holdPiece;
@@ -984,7 +803,7 @@
               queue: state.trainerQueue.slice(1)
             };
         for (const item of enumerateComboPlacements(state.board, holdCandidatePiece, cols)) {
-          candidates.push(scoreTrainerCandidate(item, continuationState, lookaheadDepth, cols, "hold"));
+          candidates.push(scoreTrainerCandidate(item, continuationState, lookaheadDepth, cols, "hold", memo, budget));
         }
       }
     }
@@ -1045,7 +864,7 @@
       return;
     }
 
-    const hasMatchingSuggestion = analyzeTrainer().some(candidate => isSameOccupiedCells(state.active, candidate.piece));
+    const hasMatchingSuggestion = state.trainerSuggestions.some(candidate => isSameOccupiedCells(state.active, candidate.piece));
     if (!hasMatchingSuggestion) {
       cancelTrainerAutoClear();
       return;
@@ -1058,7 +877,7 @@
     state.trainerAutoClearTimer = window.setTimeout(() => {
       state.trainerAutoClearTimer = 0;
       state.trainerAutoClearKey = "";
-      const stillMatches = analyzeTrainer().some(candidate => isSameOccupiedCells(state.active, candidate.piece));
+      const stillMatches = state.trainerSuggestions.some(candidate => isSameOccupiedCells(state.active, candidate.piece));
       if (
         state.mode === "fourColumnCombo"
         && state.trainerAutoClearEnabled
@@ -1189,10 +1008,9 @@
     const next = { ...state.active, x: state.active.x + dx, y: state.active.y + dy };
     if (isValid(next)) {
       state.active = next;
-      analyzeTrainer();
       scheduleTrainerAutoClear();
       interactionHaptic();
-      drawAll();
+      drawBoard();
       return;
     }
     if (dy > 0) lockTrainerActive();
@@ -1201,9 +1019,7 @@
   function trainerRotate(dir) {
     if (state.mode !== "fourColumnCombo") return;
     rotateActive(dir);
-    analyzeTrainer();
     scheduleTrainerAutoClear();
-    drawAll();
   }
 
   function trainerAction(action) {
@@ -1317,7 +1133,7 @@
     }
 
     if (state.mode === "fourColumnCombo" && state.active && state.trainerGhostEnabled) {
-      const best = analyzeTrainer()[0];
+      const best = state.trainerSuggestions[0];
       if (best) {
         for (const [x, y] of cellsForPlacement(best.piece)) {
           drawGhostCell(ctx, ox + x * cell, y * cell, cell, COLORS[best.piece.piece]);
@@ -1448,7 +1264,7 @@
   function toggleTrainerPreviewCount() {
     state.trainerPreviewCount = state.trainerPreviewCount === 5 ? 3 : 5;
     updateTrainerSwitches();
-    drawTray();
+    refreshTrainerSuggestion();
     haptic();
   }
 
@@ -1623,7 +1439,6 @@
     if (isValid(next)) {
       const moved = next.x !== state.active.x || next.y !== state.active.y;
       state.active = next;
-      if (state.mode === "fourColumnCombo") analyzeTrainer();
       if (state.mode === "fourColumnCombo") scheduleTrainerAutoClear();
       if (moved) interactionHaptic();
     }
@@ -2135,7 +1950,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=38", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=40", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
