@@ -160,10 +160,10 @@ h1 span {
 
 .palette-panel {
   --hold-height: 64px;
-  --virtual-toggle-height: 38px;
+  --virtual-toggle-height: 32px;
   --swatch-size: min(
     46px,
-    calc((var(--board-width) * 20 / var(--board-cols) - var(--hold-height) - var(--virtual-toggle-height) - 46px) / 9)
+    calc((var(--board-width) * 20 / var(--board-cols) - var(--hold-height) - var(--virtual-toggle-height) * 2 - 51px) / 9)
   );
   gap: 5px;
 }
@@ -290,7 +290,8 @@ h1 span {
     #323946;
 }
 
-.virtual-board-toggle {
+.virtual-board-toggle,
+.virtual-mirror-toggle {
   width: var(--left-rail);
   height: var(--virtual-toggle-height);
   flex: 0 0 var(--virtual-toggle-height);
@@ -307,7 +308,8 @@ h1 span {
   line-height: 1;
 }
 
-.virtual-board-toggle[aria-pressed="true"] {
+.virtual-board-toggle[aria-pressed="true"],
+.virtual-mirror-toggle[aria-pressed="true"] {
   border-color: #8bd7ff;
   background: #1d526f;
   color: #ffffff;
@@ -333,6 +335,14 @@ h1 span {
   border: 1px solid currentColor;
   border-radius: 2px;
   background: rgba(16, 19, 25, 0.35);
+}
+
+.virtual-mirror-icon {
+  width: 19px;
+  color: currentColor;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .piece-tray {
@@ -415,7 +425,8 @@ h1 span {
   display: none;
 }
 
-.app-shell.four-column-combo-mode .virtual-board-toggle {
+.app-shell.four-column-combo-mode .virtual-board-toggle,
+.app-shell.four-column-combo-mode .virtual-mirror-toggle {
   display: none;
 }
 

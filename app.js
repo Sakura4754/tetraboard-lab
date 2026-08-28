@@ -10,6 +10,7 @@
   const PIECES = ["I", "O", "T", "L", "J", "S", "Z"];
   const PIECE_CHARS = ["i", "o", "t", "l", "j", "s", "z"];
   const PIECE_FROM_CHAR = { i: 0, o: 1, t: 2, l: 3, j: 4, s: 5, z: 6 };
+  const MIRRORED_PIECES = [0, 1, 2, 4, 3, 6, 5];
   const TRAINER_SEARCH_BRANCH_LIMIT = 12;
   const TRAINER_SEARCH_NODE_LIMIT = 300000;
   const TRAINER_SEARCH_DEPTH = 20;
@@ -129,6 +130,7 @@
   const ghostToggleBtn = document.getElementById("ghostToggleBtn");
   const autoClearToggleBtn = document.getElementById("autoClearToggleBtn");
   const virtualBoardToggle = document.getElementById("virtualBoardToggle");
+  const virtualMirrorToggle = document.getElementById("virtualMirrorToggle");
   const holdCanvas = document.getElementById("holdCanvas");
   const holdEl = document.getElementById("holdSlot");
 
@@ -142,6 +144,7 @@
     virtualPieceRecords: {},
     virtualNextGroupId: 1,
     virtualBoardEnabled: false,
+    virtualBoardMirrored: false,
     trayOrder: shuffledBag(),
     usedPieces: Array(7).fill(false),
     virtualTrayOrder: shuffledBag(),
@@ -209,6 +212,7 @@
       virtualPieceRecords: JSON.parse(JSON.stringify(state.virtualPieceRecords)),
       virtualNextGroupId: state.virtualNextGroupId,
       virtualBoardEnabled: state.virtualBoardEnabled,
+      virtualBoardMirrored: state.virtualBoardMirrored,
       trayOrder: state.trayOrder.slice(),
       usedPieces: state.usedPieces.slice(),
       virtualTrayOrder: state.virtualTrayOrder.slice(),
@@ -252,6 +256,7 @@
       : {};
     state.virtualNextGroupId = snapshot.virtualNextGroupId || 1;
     state.virtualBoardEnabled = state.mode === "editor" && Boolean(snapshot.virtualBoardEnabled);
+    state.virtualBoardMirrored = Boolean(snapshot.virtualBoardMirrored);
     state.trayOrder = snapshot.trayOrder ? snapshot.trayOrder.slice() : PIECES.map((_, index) => index);
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
     state.virtualTrayOrder = snapshot.virtualTrayOrder
@@ -277,6 +282,7 @@
     }
     state.active = snapshot.active ? { ...snapshot.active } : null;
     updateVirtualBoardToggle();
+    updateVirtualMirrorToggle();
     if (state.mode === "fourColumnCombo") {
       analyzeTrainer();
       rememberTrainerPieceStart();
@@ -407,6 +413,22 @@
     delete records[groupId];
   }
 
+  function pieceRecordFromCells(piece, cells) {
+    if (cells.length !== 4 || piece < 0 || piece >= 7) return null;
+    const actual = new Set(cells.map(([x, y]) => `${x},${y}`));
+    for (let rotation = 0; rotation < 4; rotation++) {
+      for (const [baseX, baseY] of cells) {
+        for (const [shapeX, shapeY] of SHAPES[piece][rotation]) {
+          const x = baseX - shapeX;
+          const y = baseY - shapeY;
+          const expected = SHAPES[piece][rotation].map(([dx, dy]) => `${x + dx},${y + dy}`);
+          if (expected.every(cell => actual.has(cell))) return { piece, rotation, x, y };
+        }
+      }
+    }
+    return null;
+  }
+
   function rebuildPieceRecords(virtual = false) {
     const board = virtual ? state.virtualBoard : state.board;
     const groups = virtual ? state.virtualGroups : state.groups;
@@ -422,24 +444,7 @@
 
     for (const [groupId, cells] of Object.entries(groupedCells)) {
       const piece = board[cells[0][1]][cells[0][0]];
-      let found = null;
-      if (cells.length === 4 && piece >= 0 && piece < 7) {
-        const actual = new Set(cells.map(([x, y]) => `${x},${y}`));
-        for (let rotation = 0; rotation < 4 && !found; rotation++) {
-          for (const [baseX, baseY] of cells) {
-            for (const [shapeX, shapeY] of SHAPES[piece][rotation]) {
-              const x = baseX - shapeX;
-              const y = baseY - shapeY;
-              const expected = SHAPES[piece][rotation].map(([dx, dy]) => `${x + dx},${y + dy}`);
-              if (expected.every(cell => actual.has(cell))) {
-                found = { piece, rotation, x, y };
-                break;
-              }
-            }
-            if (found) break;
-          }
-        }
-      }
+      const found = pieceRecordFromCells(piece, cells);
       if (found) {
         records[groupId] = found;
       } else {
@@ -1603,6 +1608,43 @@
     haptic();
   }
 
+  function updateVirtualMirrorToggle() {
+    virtualMirrorToggle.setAttribute("aria-pressed", state.virtualBoardMirrored ? "true" : "false");
+    virtualMirrorToggle.setAttribute(
+      "aria-label",
+      state.virtualBoardMirrored ? "Restore virtual board orientation" : "Mirror virtual board"
+    );
+  }
+
+  function mirrorVirtualBoard() {
+    if (state.mode !== "editor") return;
+    pushUndo();
+    state.virtualBoard = state.virtualBoard.map(row => row
+      .slice()
+      .reverse()
+      .map(value => MIRRORED_PIECES[value] ?? value));
+    state.virtualGroups = state.virtualGroups.map(row => row.slice().reverse());
+
+    if (state.active?.virtual) {
+      const mirroredPiece = MIRRORED_PIECES[state.active.piece];
+      const mirroredCells = cellsFor(state.active).map(([x, y]) => [COLS - 1 - x, y]);
+      const placement = pieceRecordFromCells(mirroredPiece, mirroredCells);
+      if (placement) {
+        state.active = {
+          ...placement,
+          groupId: state.active.groupId,
+          virtual: true
+        };
+      }
+    }
+
+    rebuildPieceRecords(true);
+    state.virtualBoardMirrored = !state.virtualBoardMirrored;
+    updateVirtualMirrorToggle();
+    drawBoard();
+    haptic();
+  }
+
   function resetBoard() {
     if (state.mode === "fourColumnCombo") {
       resetTrainer();
@@ -1619,6 +1661,7 @@
     state.virtualGroups = makeBoard(COLS, 0);
     state.virtualPieceRecords = {};
     state.virtualNextGroupId = 1;
+    state.virtualBoardMirrored = false;
     state.trayOrder = shuffledBag();
     state.usedPieces = Array(7).fill(false);
     state.virtualTrayOrder = shuffledBag();
@@ -1626,6 +1669,7 @@
     state.holdPiece = null;
     state.holdLocked = false;
     state.active = null;
+    updateVirtualMirrorToggle();
     drawAll();
     haptic();
   }
@@ -1746,6 +1790,7 @@
         ? value.virtualNextGroupId
         : 1,
       virtualBoardEnabled: state.mode === "editor" && Boolean(value.virtualBoardEnabled),
+      virtualBoardMirrored: Boolean(value.virtualBoardMirrored),
       trayOrder,
       usedPieces,
       virtualTrayOrder,
@@ -2105,6 +2150,7 @@
     ghostToggleBtn.addEventListener("click", toggleTrainerGhost);
     autoClearToggleBtn.addEventListener("click", toggleTrainerAutoClear);
     virtualBoardToggle.addEventListener("click", toggleVirtualBoard);
+    virtualMirrorToggle.addEventListener("click", mirrorVirtualBoard);
     document.getElementById("fileBtn").addEventListener("click", () => {
       openFileDialog();
     });
@@ -2148,11 +2194,12 @@
   setupPalette();
   bindEvents();
   updateVirtualBoardToggle();
+  updateVirtualMirrorToggle();
   drawAll();
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=46", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=47", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
