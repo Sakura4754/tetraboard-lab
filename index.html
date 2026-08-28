@@ -14,7 +14,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
-  <link rel="stylesheet" href="./styles.css?v=45">
+  <link rel="stylesheet" href="./styles.css?v=46">
 </head>
 <body>
   <main id="appShell" class="app-shell">
@@ -49,6 +49,10 @@
           <canvas id="holdCanvas" width="70" height="54" aria-hidden="true"></canvas>
         </button>
         <div id="palette" class="palette"></div>
+        <button id="virtualBoardToggle" class="virtual-board-toggle" type="button" aria-pressed="false" aria-label="Draw on virtual board">
+          <span class="virtual-board-icon" aria-hidden="true"></span>
+          <span>Virtual</span>
+        </button>
       </aside>
 
       <section class="board-panel">
@@ -105,6 +109,6 @@
     </section>
   </div>
 
-  <script src="./app.js?v=45"></script>
+  <script src="./app.js?v=46"></script>
 </body>
 </html>

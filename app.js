@@ -128,6 +128,7 @@
   const previewToggleBtn = document.getElementById("previewToggleBtn");
   const ghostToggleBtn = document.getElementById("ghostToggleBtn");
   const autoClearToggleBtn = document.getElementById("autoClearToggleBtn");
+  const virtualBoardToggle = document.getElementById("virtualBoardToggle");
   const holdCanvas = document.getElementById("holdCanvas");
   const holdEl = document.getElementById("holdSlot");
 
@@ -136,8 +137,15 @@
     groups: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
     pieceRecords: {},
     nextGroupId: 1,
+    virtualBoard: Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY)),
+    virtualGroups: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
+    virtualPieceRecords: {},
+    virtualNextGroupId: 1,
+    virtualBoardEnabled: false,
     trayOrder: shuffledBag(),
     usedPieces: Array(7).fill(false),
+    virtualTrayOrder: shuffledBag(),
+    virtualUsedPieces: Array(7).fill(false),
     holdPiece: null,
     holdLocked: false,
     mode: "editor",
@@ -196,8 +204,15 @@
       groups: copyBoard(state.groups),
       pieceRecords: JSON.parse(JSON.stringify(state.pieceRecords)),
       nextGroupId: state.nextGroupId,
+      virtualBoard: copyBoard(state.virtualBoard),
+      virtualGroups: copyBoard(state.virtualGroups),
+      virtualPieceRecords: JSON.parse(JSON.stringify(state.virtualPieceRecords)),
+      virtualNextGroupId: state.virtualNextGroupId,
+      virtualBoardEnabled: state.virtualBoardEnabled,
       trayOrder: state.trayOrder.slice(),
       usedPieces: state.usedPieces.slice(),
+      virtualTrayOrder: state.virtualTrayOrder.slice(),
+      virtualUsedPieces: state.virtualUsedPieces.slice(),
       holdPiece: state.holdPiece,
       holdLocked: state.holdLocked,
       trainerQueue: state.trainerQueue.slice(),
@@ -230,8 +245,21 @@
     state.groups = snapshot.groups ? copyBoard(snapshot.groups) : Array.from({ length: ROWS }, () => Array(cols).fill(0));
     state.pieceRecords = snapshot.pieceRecords ? JSON.parse(JSON.stringify(snapshot.pieceRecords)) : {};
     state.nextGroupId = snapshot.nextGroupId || 1;
+    state.virtualBoard = snapshot.virtualBoard ? copyBoard(snapshot.virtualBoard) : makeBoard(COLS);
+    state.virtualGroups = snapshot.virtualGroups ? copyBoard(snapshot.virtualGroups) : makeBoard(COLS, 0);
+    state.virtualPieceRecords = snapshot.virtualPieceRecords
+      ? JSON.parse(JSON.stringify(snapshot.virtualPieceRecords))
+      : {};
+    state.virtualNextGroupId = snapshot.virtualNextGroupId || 1;
+    state.virtualBoardEnabled = state.mode === "editor" && Boolean(snapshot.virtualBoardEnabled);
     state.trayOrder = snapshot.trayOrder ? snapshot.trayOrder.slice() : PIECES.map((_, index) => index);
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
+    state.virtualTrayOrder = snapshot.virtualTrayOrder
+      ? snapshot.virtualTrayOrder.slice()
+      : PIECES.map((_, index) => index);
+    state.virtualUsedPieces = snapshot.virtualUsedPieces
+      ? snapshot.virtualUsedPieces.slice()
+      : Array(7).fill(false);
     state.holdPiece = Number.isInteger(snapshot.holdPiece) ? snapshot.holdPiece : null;
     state.holdLocked = Boolean(snapshot.holdLocked);
     state.trainerOutsideCells = Array.isArray(snapshot.trainerOutsideCells)
@@ -248,6 +276,7 @@
       fillTrainerQueue();
     }
     state.active = snapshot.active ? { ...snapshot.active } : null;
+    updateVirtualBoardToggle();
     if (state.mode === "fourColumnCombo") {
       analyzeTrainer();
       rememberTrainerPieceStart();
@@ -297,7 +326,8 @@
 
   function isValid(piece) {
     const cols = boardCols();
-    return cellsFor(piece).every(([x, y]) => x >= 0 && x < cols && y >= 0 && y < ROWS && state.board[y][x] === EMPTY);
+    const board = state.mode === "editor" && piece.virtual ? state.virtualBoard : state.board;
+    return cellsFor(piece).every(([x, y]) => x >= 0 && x < cols && y >= 0 && y < ROWS && board[y][x] === EMPTY);
   }
 
   function clampPieceIntoBoard(piece) {
@@ -323,12 +353,16 @@
   }
 
   function commitActiveIntoBoard() {
-    const groupId = state.active.groupId || state.nextGroupId++;
+    const virtual = state.mode === "editor" && Boolean(state.active.virtual);
+    const board = virtual ? state.virtualBoard : state.board;
+    const groups = virtual ? state.virtualGroups : state.groups;
+    const records = virtual ? state.virtualPieceRecords : state.pieceRecords;
+    const groupId = state.active.groupId || (virtual ? state.virtualNextGroupId++ : state.nextGroupId++);
     for (const [x, y] of cellsFor(state.active)) {
-      state.board[y][x] = state.active.piece;
-      state.groups[y][x] = groupId;
+      board[y][x] = state.active.piece;
+      groups[y][x] = groupId;
     }
-    state.pieceRecords[groupId] = {
+    records[groupId] = {
       piece: state.active.piece,
       rotation: state.active.rotation,
       x: state.active.x,
@@ -339,47 +373,55 @@
   }
 
   function selectPlacedPiece(x, y) {
-    const groupId = state.groups[y]?.[x] || 0;
-    const record = state.pieceRecords[groupId];
+    const virtual = state.mode === "editor" && state.virtualBoardEnabled;
+    const board = virtual ? state.virtualBoard : state.board;
+    const groups = virtual ? state.virtualGroups : state.groups;
+    const records = virtual ? state.virtualPieceRecords : state.pieceRecords;
+    const groupId = groups[y]?.[x] || 0;
+    const record = records[groupId];
     if (!groupId || !record) return false;
 
     pushUndo();
     for (let row = 0; row < ROWS; row++) {
       for (let col = 0; col < COLS; col++) {
-        if (state.groups[row][col] !== groupId) continue;
-        state.board[row][col] = EMPTY;
-        state.groups[row][col] = 0;
+        if (groups[row][col] !== groupId) continue;
+        board[row][col] = EMPTY;
+        groups[row][col] = 0;
       }
     }
-    delete state.pieceRecords[groupId];
-    state.active = { ...record, groupId };
+    delete records[groupId];
+    state.active = { ...record, groupId, virtual };
     state.holdLocked = false;
     return true;
   }
 
-  function dissolveGroup(groupId) {
+  function dissolveGroup(groupId, virtual = false) {
     if (!groupId) return;
+    const groups = virtual ? state.virtualGroups : state.groups;
+    const records = virtual ? state.virtualPieceRecords : state.pieceRecords;
     for (let row = 0; row < ROWS; row++) {
       for (let col = 0; col < COLS; col++) {
-        if (state.groups[row][col] === groupId) state.groups[row][col] = 0;
+        if (groups[row][col] === groupId) groups[row][col] = 0;
       }
     }
-    delete state.pieceRecords[groupId];
+    delete records[groupId];
   }
 
-  function rebuildPieceRecords() {
+  function rebuildPieceRecords(virtual = false) {
+    const board = virtual ? state.virtualBoard : state.board;
+    const groups = virtual ? state.virtualGroups : state.groups;
     const records = {};
     const groupedCells = {};
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
-        const groupId = state.groups[y][x];
+        const groupId = groups[y][x];
         if (!groupId) continue;
         (groupedCells[groupId] ||= []).push([x, y]);
       }
     }
 
     for (const [groupId, cells] of Object.entries(groupedCells)) {
-      const piece = state.board[cells[0][1]][cells[0][0]];
+      const piece = board[cells[0][1]][cells[0][0]];
       let found = null;
       if (cells.length === 4 && piece >= 0 && piece < 7) {
         const actual = new Set(cells.map(([x, y]) => `${x},${y}`));
@@ -401,10 +443,11 @@
       if (found) {
         records[groupId] = found;
       } else {
-        for (const [x, y] of cells) state.groups[y][x] = 0;
+        for (const [x, y] of cells) groups[y][x] = 0;
       }
     }
-    state.pieceRecords = records;
+    if (virtual) state.virtualPieceRecords = records;
+    else state.pieceRecords = records;
   }
 
   function rotateActive(dir) {
@@ -430,20 +473,28 @@
       return;
     }
     pushUndo();
+    const virtual = state.mode === "editor" && Boolean(state.active?.virtual ?? state.virtualBoardEnabled);
     if (state.active && isValid(state.active)) {
       commitActiveIntoBoard();
     }
-    const keptRows = state.board.map((row, index) => ({ row, index })).filter(item => item.row.some(cell => cell === EMPTY));
+    const board = virtual ? state.virtualBoard : state.board;
+    const groups = virtual ? state.virtualGroups : state.groups;
+    const keptRows = board.map((row, index) => ({ row, index })).filter(item => item.row.some(cell => cell === EMPTY));
     const next = keptRows.map(item => item.row);
-    const nextGroups = keptRows.map(item => state.groups[item.index]);
+    const nextGroups = keptRows.map(item => groups[item.index]);
     const cleared = ROWS - next.length;
     while (next.length < ROWS) {
       next.unshift(Array(COLS).fill(EMPTY));
       nextGroups.unshift(Array(COLS).fill(0));
     }
-    state.board = next;
-    state.groups = nextGroups;
-    rebuildPieceRecords();
+    if (virtual) {
+      state.virtualBoard = next;
+      state.virtualGroups = nextGroups;
+    } else {
+      state.board = next;
+      state.groups = nextGroups;
+    }
+    rebuildPieceRecords(virtual);
     if (cleared === 0) state.undo.pop();
     haptic();
     drawAll();
@@ -1090,6 +1141,23 @@
     targetCtx.restore();
   }
 
+  function drawVirtualCell(targetCtx, x, y, size, color) {
+    const pad = Math.max(1, size * 0.1);
+    const radius = Math.max(3, size * 0.16);
+    targetCtx.save();
+    targetCtx.globalAlpha = 0.3;
+    targetCtx.fillStyle = color;
+    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
+    targetCtx.fill();
+    targetCtx.globalAlpha = 0.88;
+    targetCtx.strokeStyle = color;
+    targetCtx.lineWidth = Math.max(1.25, size * 0.065);
+    targetCtx.setLineDash([Math.max(2, size * 0.16), Math.max(2, size * 0.1)]);
+    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+
   function landingPosition(piece) {
     let landing = { ...piece };
     while (isValid({ ...landing, y: landing.y + 1 })) {
@@ -1149,6 +1217,17 @@
       ctx.stroke();
     }
 
+    if (state.mode === "editor") {
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const value = state.virtualBoard[y][x];
+          if (value !== EMPTY) {
+            drawVirtualCell(ctx, x * cell, y * cell, cell, PAINT_COLORS[value] || PAINT_COLORS[7]);
+          }
+        }
+      }
+    }
+
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < cols; x++) {
         const value = state.board[y][x];
@@ -1193,7 +1272,11 @@
       const invalid = !isValid(state.active);
       for (const [x, y] of cellsFor(state.active)) {
         if (y >= 0 && y < ROWS && x >= 0 && x < cols) {
-          drawCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece], invalid);
+          if (state.mode === "editor" && state.active.virtual) {
+            drawVirtualCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece]);
+          } else {
+            drawCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece], invalid);
+          }
         }
       }
     }
@@ -1264,13 +1347,15 @@
     comboBoxEl.hidden = true;
     linesBoxEl.hidden = true;
     trainerSwitchesEl.hidden = true;
-    for (const piece of state.trayOrder) {
+    const trayOrder = state.virtualBoardEnabled ? state.virtualTrayOrder : state.trayOrder;
+    const usedPieces = state.virtualBoardEnabled ? state.virtualUsedPieces : state.usedPieces;
+    for (const piece of trayOrder) {
       const tile = document.createElement("button");
       tile.className = "piece-tile";
       tile.type = "button";
       tile.dataset.piece = String(piece);
       tile.setAttribute("aria-label", `Piece ${PIECES[piece]}`);
-      tile.disabled = state.usedPieces[piece];
+      tile.disabled = usedPieces[piece];
       const canvas = makeCanvas(70, 54);
       drawPieceCanvas(canvas, piece);
       tile.append(canvas);
@@ -1369,7 +1454,8 @@
         piece: incomingPiece,
         rotation: 0,
         x: state.active.x,
-        y: state.active.y
+        y: state.active.y,
+        virtual: Boolean(state.active.virtual)
       });
 
       if (!isValid(candidate)) {
@@ -1410,20 +1496,23 @@
     const y = Math.floor((clientY - rect.top) / cell);
     if (x < 0 || x >= boardCols() || y < 0 || y >= ROWS) return;
     const value = state.paint === 8 ? EMPTY : state.paint;
-    if (state.board[y][x] === value) return;
+    const virtual = state.virtualBoardEnabled;
+    const board = virtual ? state.virtualBoard : state.board;
+    const groups = virtual ? state.virtualGroups : state.groups;
+    if (board[y][x] === value) return;
     if (forceUndo) pushUndo();
-    dissolveGroup(state.groups[y][x]);
-    state.board[y][x] = value;
-    state.groups[y][x] = 0;
+    dissolveGroup(groups[y][x], virtual);
+    board[y][x] = value;
+    groups[y][x] = 0;
     interactionHaptic();
     drawBoard();
   }
 
-  function activeFromPointer(piece, clientX, clientY) {
+  function activeFromPointer(piece, clientX, clientY, virtual = false) {
     const { rect, cell } = boardMetrics();
     const x = Math.floor((clientX - rect.left) / cell) - 1;
     const y = Math.floor((clientY - rect.top) / cell) - 1;
-    return clampPieceIntoBoard({ piece, rotation: 0, x, y });
+    return clampPieceIntoBoard({ piece, rotation: 0, x, y, virtual });
   }
 
   function pointerCell(clientX, clientY) {
@@ -1439,15 +1528,17 @@
   }
 
   function startPieceDrag(piece, clientX, clientY) {
-    if (state.usedPieces[piece]) return;
+    const virtual = state.virtualBoardEnabled;
+    const usedPieces = virtual ? state.virtualUsedPieces : state.usedPieces;
+    if (usedPieces[piece]) return;
     pushUndo();
     if (state.active && isValid(state.active)) {
       commitActiveIntoBoard();
     }
-    state.pointer = { mode: "piece", piece, grabX: 1, grabY: 1 };
-    const candidate = activeFromPointer(piece, clientX, clientY);
+    state.pointer = { mode: "piece", piece, virtual, grabX: 1, grabY: 1 };
+    const candidate = activeFromPointer(piece, clientX, clientY, virtual);
     state.active = isValid(candidate) ? candidate : null;
-    if (state.active) consumeTrayPiece(piece);
+    if (state.active) consumeTrayPiece(piece, virtual);
     setTool("piece");
     haptic();
     drawAll();
@@ -1456,10 +1547,10 @@
   function moveActiveTo(clientX, clientY) {
     if (!state.active) {
       if (state.pointer?.mode !== "piece") return;
-      const candidate = activeFromPointer(state.pointer.piece, clientX, clientY);
+      const candidate = activeFromPointer(state.pointer.piece, clientX, clientY, state.pointer.virtual);
       if (isValid(candidate)) {
         state.active = candidate;
-        consumeTrayPiece(state.pointer.piece);
+        consumeTrayPiece(state.pointer.piece, state.pointer.virtual);
         drawTray();
         drawHold();
         interactionHaptic();
@@ -1497,6 +1588,21 @@
     }
   }
 
+  function updateVirtualBoardToggle() {
+    const enabled = state.mode === "editor" && state.virtualBoardEnabled;
+    virtualBoardToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+    virtualBoardToggle.setAttribute("aria-label", enabled ? "Draw on physical board" : "Draw on virtual board");
+  }
+
+  function toggleVirtualBoard() {
+    if (state.mode !== "editor") return;
+    state.virtualBoardEnabled = !state.virtualBoardEnabled;
+    updateVirtualBoardToggle();
+    drawTray();
+    drawBoard();
+    haptic();
+  }
+
   function resetBoard() {
     if (state.mode === "fourColumnCombo") {
       resetTrainer();
@@ -1509,8 +1615,14 @@
     state.groups = makeBoard(COLS, 0);
     state.pieceRecords = {};
     state.nextGroupId = 1;
+    state.virtualBoard = makeBoard(COLS);
+    state.virtualGroups = makeBoard(COLS, 0);
+    state.virtualPieceRecords = {};
+    state.virtualNextGroupId = 1;
     state.trayOrder = shuffledBag();
     state.usedPieces = Array(7).fill(false);
+    state.virtualTrayOrder = shuffledBag();
+    state.virtualUsedPieces = Array(7).fill(false);
     state.holdPiece = null;
     state.holdLocked = false;
     state.active = null;
@@ -1530,17 +1642,24 @@
       return;
     }
     pushUndo();
-    state.trayOrder = shuffledBag();
-    state.usedPieces.fill(false);
+    if (state.virtualBoardEnabled) {
+      state.virtualTrayOrder = shuffledBag();
+      state.virtualUsedPieces.fill(false);
+    } else {
+      state.trayOrder = shuffledBag();
+      state.usedPieces.fill(false);
+    }
     drawTray();
     haptic();
   }
 
-  function consumeTrayPiece(piece) {
-    state.usedPieces[piece] = true;
-    if (state.usedPieces.every(Boolean)) {
-      state.trayOrder = shuffledBag();
-      state.usedPieces.fill(false);
+  function consumeTrayPiece(piece, virtual = false) {
+    const usedPieces = virtual ? state.virtualUsedPieces : state.usedPieces;
+    usedPieces[piece] = true;
+    if (usedPieces.every(Boolean)) {
+      if (virtual) state.virtualTrayOrder = shuffledBag();
+      else state.trayOrder = shuffledBag();
+      usedPieces.fill(false);
     }
   }
 
@@ -1587,6 +1706,21 @@
     const usedPieces = Array.isArray(value.usedPieces) && value.usedPieces.length === 7
       ? value.usedPieces.map(Boolean)
       : Array(7).fill(false);
+    const virtualBoard = isMatrix(value.virtualBoard, ROWS, COLS, cell => Number.isInteger(cell) && cell >= EMPTY && cell <= 7)
+      ? copyBoard(value.virtualBoard)
+      : makeBoard(COLS);
+    const virtualGroups = isMatrix(value.virtualGroups, ROWS, COLS, cell => Number.isInteger(cell) && cell >= 0)
+      ? copyBoard(value.virtualGroups)
+      : makeBoard(COLS, 0);
+    const virtualTrayOrder = Array.isArray(value.virtualTrayOrder)
+      && value.virtualTrayOrder.length === 7
+      && new Set(value.virtualTrayOrder).size === 7
+      && value.virtualTrayOrder.every(piece => Number.isInteger(piece) && piece >= 0 && piece < 7)
+      ? value.virtualTrayOrder.slice()
+      : PIECES.map((_, index) => index);
+    const virtualUsedPieces = Array.isArray(value.virtualUsedPieces) && value.virtualUsedPieces.length === 7
+      ? value.virtualUsedPieces.map(Boolean)
+      : Array(7).fill(false);
     const holdPiece = value.holdPiece === null || value.holdPiece === undefined
       ? null
       : (Number.isInteger(value.holdPiece) && value.holdPiece >= 0 && value.holdPiece < 7 ? value.holdPiece : null);
@@ -1603,8 +1737,19 @@
         ? JSON.parse(JSON.stringify(value.pieceRecords))
         : {},
       nextGroupId: Number.isInteger(value.nextGroupId) && value.nextGroupId > 0 ? value.nextGroupId : 1,
+      virtualBoard,
+      virtualGroups,
+      virtualPieceRecords: value.virtualPieceRecords && typeof value.virtualPieceRecords === "object"
+        ? JSON.parse(JSON.stringify(value.virtualPieceRecords))
+        : {},
+      virtualNextGroupId: Number.isInteger(value.virtualNextGroupId) && value.virtualNextGroupId > 0
+        ? value.virtualNextGroupId
+        : 1,
+      virtualBoardEnabled: state.mode === "editor" && Boolean(value.virtualBoardEnabled),
       trayOrder,
       usedPieces,
+      virtualTrayOrder,
+      virtualUsedPieces,
       holdPiece,
       holdLocked: Boolean(value.holdLocked),
       active
@@ -1959,6 +2104,7 @@
     previewToggleBtn.addEventListener("click", toggleTrainerPreviewCount);
     ghostToggleBtn.addEventListener("click", toggleTrainerGhost);
     autoClearToggleBtn.addEventListener("click", toggleTrainerAutoClear);
+    virtualBoardToggle.addEventListener("click", toggleVirtualBoard);
     document.getElementById("fileBtn").addEventListener("click", () => {
       openFileDialog();
     });
@@ -2001,11 +2147,12 @@
 
   setupPalette();
   bindEvents();
+  updateVirtualBoardToggle();
   drawAll();
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=45", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=46", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
