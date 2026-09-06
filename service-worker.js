@@ -1,9 +1,11 @@
-const CACHE_NAME = "tetraboard-lab-v47-virtual-mirror";
+const CACHE_NAME = "tetraboard-lab-v70-editor-layers";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=47",
-  "./app.js?v=47",
+  "./styles.css?v=70",
+  "./game-rules.js?v=69",
+  "./app.js?v=70",
+  "./st-practice-library.js?v=67",
   "./manifest.webmanifest",
   "./icons/icon-180.png",
   "./icons/icon-192.png",

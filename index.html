@@ -14,7 +14,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
-  <link rel="stylesheet" href="./styles.css?v=47">
+  <link rel="stylesheet" href="./styles.css?v=70">
 </head>
 <body>
   <main id="appShell" class="app-shell">
@@ -22,22 +22,24 @@
       <div class="title-area">
         <h1>TetraBoard Lab <span>Mobile</span></h1>
         <div id="trainerSwitches" class="trainer-switches" hidden>
-          <button id="previewToggleBtn" class="switch-button" type="button" aria-pressed="true">
+          <button id="previewToggleBtn" class="switch-button" type="button" aria-pressed="false">
             <span>Preview</span>
-            <strong>5</strong>
+            <strong>3</strong>
           </button>
           <button id="ghostToggleBtn" class="switch-button" type="button" aria-pressed="true">
             <span>Ghost</span>
             <strong>On</strong>
           </button>
-          <button id="autoClearToggleBtn" class="switch-button" type="button" aria-pressed="false">
+          <button id="autoClearToggleBtn" class="switch-button active" type="button" aria-pressed="true">
             <span>Auto</span>
-            <strong>Off</strong>
+            <strong>On</strong>
           </button>
         </div>
       </div>
       <div class="top-actions">
-        <button id="resetBtn" class="icon-button" type="button" aria-label="Reset board">Reset</button>
+        <div class="reset-row">
+          <button id="resetBtn" class="icon-button" type="button" aria-label="Reset board">Reset</button>
+        </div>
         <button id="resetBagBtn" class="icon-button secondary" type="button" aria-label="Reset seven-piece bag">Reset Bag</button>
       </div>
     </header>
@@ -48,15 +50,13 @@
           <span>Hold</span>
           <canvas id="holdCanvas" width="70" height="54" aria-hidden="true"></canvas>
         </button>
-        <div id="palette" class="palette"></div>
         <button id="virtualBoardToggle" class="virtual-board-toggle" type="button" aria-pressed="false" aria-label="Draw on virtual board">
-          <span class="virtual-board-icon" aria-hidden="true"></span>
-          <span>Virtual</span>
+          <span class="virtual-board-icon" aria-hidden="true"></span><span>Virtual</span>
         </button>
         <button id="virtualMirrorToggle" class="virtual-mirror-toggle" type="button" aria-pressed="false" aria-label="Mirror virtual board">
-          <span class="virtual-mirror-icon" aria-hidden="true">↔</span>
-          <span>Mirror</span>
+          <span class="virtual-mirror-icon" aria-hidden="true">↔</span><span>Mirror</span>
         </button>
+        <div id="palette" class="palette"></div>
       </aside>
 
       <section class="board-panel">
@@ -79,7 +79,7 @@
     <nav class="action-bar" aria-label="Actions">
       <button class="tool" data-tool="draw" type="button">Draw</button>
       <button class="tool active" data-tool="piece" type="button">Piece</button>
-      <button id="fourColumnComboBtn" type="button">4 Wide</button>
+      <button id="otherBtn" type="button" aria-haspopup="dialog">Other</button>
       <button id="clearBtn" type="button">Clear Lines</button>
       <button id="undoBtn" type="button">Undo</button>
       <button id="fileBtn" type="button">File</button>
@@ -113,6 +113,17 @@
     </section>
   </div>
 
-  <script src="./app.js?v=47"></script>
+  <dialog id="otherDialog" aria-labelledby="otherTitle">
+    <h2 id="otherTitle">Other</h2>
+    <p>選擇練習模式（再次選擇目前模式可返回編輯器）</p>
+    <button id="fourColumnComboBtn" type="button">4 Wide</button>
+    <button id="stStackingBtn" type="button">ST Stack</button>
+    <button id="returnEditorBtn" type="button">Back to Editor</button>
+    <form method="dialog"><button>關閉</button></form>
+  </dialog>
+  <p id="stPracticeStatus" role="status" hidden></p>
+  <script src="./game-rules.js?v=69"></script>
+  <script src="./st-practice-library.js?v=67"></script>
+  <script src="./app.js?v=70"></script>
 </body>
 </html>

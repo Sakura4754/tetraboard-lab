@@ -7,6 +7,7 @@
   const EMPTY = -1;
   const SAVE_STORAGE_KEY = "tetraboard-lab-saves-v1";
   const FOUR_COLUMN_COMBO_SAVE_STORAGE_KEY = "tetraboard-lab-four-column-combo-saves-v1";
+  const ST_STACKING_SAVE_STORAGE_KEY = "tetraboard-lab-st-stacking-saves-v1";
   const PIECES = ["I", "O", "T", "L", "J", "S", "Z"];
   const PIECE_CHARS = ["i", "o", "t", "l", "j", "s", "z"];
   const PIECE_FROM_CHAR = { i: 0, o: 1, t: 2, l: 3, j: 4, s: 5, z: 6 };
@@ -14,6 +15,7 @@
   const TRAINER_SEARCH_BRANCH_LIMIT = 12;
   const TRAINER_SEARCH_NODE_LIMIT = 300000;
   const TRAINER_SEARCH_DEPTH = 20;
+  const TRAINER_AI_PREVIEW_COUNT = 21;
   const TRAINER_OPENING_PATTERNS = [
     { piece: 5, cells: [[1, 1], [1, 2], [2, 2], [0, 1]] },
     { piece: 0, cells: [[1, 1], [2, 1], [3, 1], [0, 1]] },
@@ -43,12 +45,7 @@
   ];
 
   function shuffledBag() {
-    const bag = PIECES.map((_, index) => index);
-    for (let i = bag.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [bag[i], bag[j]] = [bag[j], bag[i]];
-    }
-    return bag;
+    return window.TetrisRules.createSevenBag(Math.random);
   }
 
   const SHAPES = [
@@ -129,9 +126,9 @@
   const previewToggleBtn = document.getElementById("previewToggleBtn");
   const ghostToggleBtn = document.getElementById("ghostToggleBtn");
   const autoClearToggleBtn = document.getElementById("autoClearToggleBtn");
-  const virtualBoardToggle = document.getElementById("virtualBoardToggle");
-  const virtualMirrorToggle = document.getElementById("virtualMirrorToggle");
   const holdCanvas = document.getElementById("holdCanvas");
+  const virtualBoardToggle = document.getElementById('virtualBoardToggle');
+  const virtualMirrorToggle = document.getElementById('virtualMirrorToggle');
   const holdEl = document.getElementById("holdSlot");
 
   const state = {
@@ -139,16 +136,16 @@
     groups: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
     pieceRecords: {},
     nextGroupId: 1,
-    virtualBoard: Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY)),
-    virtualGroups: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
+    virtualBoard: Array.from({length:ROWS},()=>Array(COLS).fill(EMPTY)),
+    virtualGroups: Array.from({length:ROWS},()=>Array(COLS).fill(0)),
     virtualPieceRecords: {},
     virtualNextGroupId: 1,
     virtualBoardEnabled: false,
     virtualBoardMirrored: false,
-    trayOrder: shuffledBag(),
-    usedPieces: Array(7).fill(false),
     virtualTrayOrder: shuffledBag(),
     virtualUsedPieces: Array(7).fill(false),
+    trayOrder: shuffledBag(),
+    usedPieces: Array(7).fill(false),
     holdPiece: null,
     holdLocked: false,
     mode: "editor",
@@ -158,13 +155,20 @@
     trainerSuggestions: [],
     trainerCombo: 0,
     trainerLines: 0,
-    trainerPreviewCount: 5,
+    trainerPreviewCount: 3,
     trainerGhostEnabled: true,
-    trainerAutoClearEnabled: false,
+    trainerAutoClearEnabled: true,
     trainerAutoClearTimer: 0,
     trainerAutoClearKey: "",
     trainerOutsideCells: [],
     trainerPieceStartSnapshot: null,
+    stTsdCount: 0,
+    stTetrisCount: 0,
+    stB2bCount: 0,
+    stB2bActive: false,
+    stB2bBroken: false,
+    stBagRemaining: [],
+    stStrategyState: null,
     undo: [],
     tool: "piece",
     paint: 7,
@@ -197,6 +201,10 @@
     return state.mode === "fourColumnCombo" ? FOUR_COLUMN_COMBO_COLS : COLS;
   }
 
+  function isTrainerMode() {
+    return state.mode === "fourColumnCombo" || state.mode === "stStacking";
+  }
+
   function makeBoard(cols, fill = EMPTY) {
     return Array.from({ length: ROWS }, () => Array(cols).fill(fill));
   }
@@ -213,10 +221,10 @@
       virtualNextGroupId: state.virtualNextGroupId,
       virtualBoardEnabled: state.virtualBoardEnabled,
       virtualBoardMirrored: state.virtualBoardMirrored,
-      trayOrder: state.trayOrder.slice(),
-      usedPieces: state.usedPieces.slice(),
       virtualTrayOrder: state.virtualTrayOrder.slice(),
       virtualUsedPieces: state.virtualUsedPieces.slice(),
+      trayOrder: state.trayOrder.slice(),
+      usedPieces: state.usedPieces.slice(),
       holdPiece: state.holdPiece,
       holdLocked: state.holdLocked,
       trainerQueue: state.trainerQueue.slice(),
@@ -227,6 +235,13 @@
       trainerGhostEnabled: state.trainerGhostEnabled,
       trainerAutoClearEnabled: state.trainerAutoClearEnabled,
       trainerOutsideCells: state.trainerOutsideCells.map(cell => ({ ...cell })),
+      stTsdCount: state.stTsdCount,
+      stTetrisCount: state.stTetrisCount,
+      stB2bCount: state.stB2bCount,
+      stB2bActive: state.stB2bActive,
+      stB2bBroken: state.stB2bBroken,
+      stBagRemaining: state.stBagRemaining.slice(),
+      stStrategyState: state.stStrategyState ? JSON.parse(JSON.stringify(state.stStrategyState)) : null,
       active: state.active ? { ...state.active } : null
     };
   }
@@ -250,41 +265,42 @@
     state.pieceRecords = snapshot.pieceRecords ? JSON.parse(JSON.stringify(snapshot.pieceRecords)) : {};
     state.nextGroupId = snapshot.nextGroupId || 1;
     state.virtualBoard = snapshot.virtualBoard ? copyBoard(snapshot.virtualBoard) : makeBoard(COLS);
-    state.virtualGroups = snapshot.virtualGroups ? copyBoard(snapshot.virtualGroups) : makeBoard(COLS, 0);
-    state.virtualPieceRecords = snapshot.virtualPieceRecords
-      ? JSON.parse(JSON.stringify(snapshot.virtualPieceRecords))
-      : {};
+    state.virtualGroups = snapshot.virtualGroups ? copyBoard(snapshot.virtualGroups) : makeBoard(COLS,0);
+    state.virtualPieceRecords = snapshot.virtualPieceRecords ? JSON.parse(JSON.stringify(snapshot.virtualPieceRecords)) : {};
     state.virtualNextGroupId = snapshot.virtualNextGroupId || 1;
-    state.virtualBoardEnabled = state.mode === "editor" && Boolean(snapshot.virtualBoardEnabled);
+    state.virtualBoardEnabled = state.mode === 'editor' && Boolean(snapshot.virtualBoardEnabled);
     state.virtualBoardMirrored = Boolean(snapshot.virtualBoardMirrored);
+    state.virtualTrayOrder = snapshot.virtualTrayOrder ? snapshot.virtualTrayOrder.slice() : PIECES.map((_,i)=>i);
+    state.virtualUsedPieces = snapshot.virtualUsedPieces ? snapshot.virtualUsedPieces.slice() : Array(7).fill(false);
     state.trayOrder = snapshot.trayOrder ? snapshot.trayOrder.slice() : PIECES.map((_, index) => index);
     state.usedPieces = snapshot.usedPieces ? snapshot.usedPieces.slice() : Array(7).fill(false);
-    state.virtualTrayOrder = snapshot.virtualTrayOrder
-      ? snapshot.virtualTrayOrder.slice()
-      : PIECES.map((_, index) => index);
-    state.virtualUsedPieces = snapshot.virtualUsedPieces
-      ? snapshot.virtualUsedPieces.slice()
-      : Array(7).fill(false);
     state.holdPiece = Number.isInteger(snapshot.holdPiece) ? snapshot.holdPiece : null;
     state.holdLocked = Boolean(snapshot.holdLocked);
     state.trainerOutsideCells = Array.isArray(snapshot.trainerOutsideCells)
       ? snapshot.trainerOutsideCells.map(cell => ({ ...cell }))
       : [];
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
       state.trainerQueue = Array.isArray(snapshot.trainerQueue) ? snapshot.trainerQueue.slice() : [];
       state.trainerBag = Array.isArray(snapshot.trainerBag) ? snapshot.trainerBag.slice() : [];
       state.trainerCombo = Number.isInteger(snapshot.trainerCombo) ? snapshot.trainerCombo : 0;
       state.trainerLines = Number.isInteger(snapshot.trainerLines) ? snapshot.trainerLines : 0;
-      state.trainerPreviewCount = snapshot.trainerPreviewCount === 3 ? 3 : 5;
+      state.trainerPreviewCount = snapshot.trainerPreviewCount === 5 ? 5 : 3;
       state.trainerGhostEnabled = snapshot.trainerGhostEnabled !== false;
-      state.trainerAutoClearEnabled = Boolean(snapshot.trainerAutoClearEnabled);
+      state.trainerAutoClearEnabled = snapshot.trainerAutoClearEnabled !== false;
+      state.stTsdCount = Number.isInteger(snapshot.stTsdCount) ? snapshot.stTsdCount : 0;
+      state.stTetrisCount = Number.isInteger(snapshot.stTetrisCount) ? snapshot.stTetrisCount : 0;
+      state.stB2bCount = Number.isInteger(snapshot.stB2bCount) ? snapshot.stB2bCount : 0;
+      state.stB2bActive = Boolean(snapshot.stB2bActive);
+      state.stB2bBroken = Boolean(snapshot.stB2bBroken);
+      state.stBagRemaining = Array.isArray(snapshot.stBagRemaining)
+        ? snapshot.stBagRemaining.filter(piece => Number.isInteger(piece) && piece >= 0 && piece < PIECES.length)
+        : [];
+      state.stStrategyState = snapshot.stStrategyState?.practice ? JSON.parse(JSON.stringify(snapshot.stStrategyState)) : null;
       fillTrainerQueue();
     }
     state.active = snapshot.active ? { ...snapshot.active } : null;
-    updateVirtualBoardToggle();
-    updateVirtualMirrorToggle();
-    if (state.mode === "fourColumnCombo") {
-      analyzeTrainer();
+    if (isTrainerMode()) {
+      analyzeCurrentTrainer();
       rememberTrainerPieceStart();
       scheduleTrainerAutoClear();
     }
@@ -292,7 +308,7 @@
   }
 
   function rememberTrainerPieceStart() {
-    if (state.mode !== "fourColumnCombo" || !state.active) return;
+    if (!isTrainerMode() || !state.active) return;
     state.trainerPieceStartSnapshot = snapshotState();
   }
 
@@ -309,7 +325,7 @@
 
   function boardMetrics() {
     const rect = boardCanvas.getBoundingClientRect();
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
       return {
         rect,
         cell: rect.width / COLS,
@@ -413,22 +429,6 @@
     delete records[groupId];
   }
 
-  function pieceRecordFromCells(piece, cells) {
-    if (cells.length !== 4 || piece < 0 || piece >= 7) return null;
-    const actual = new Set(cells.map(([x, y]) => `${x},${y}`));
-    for (let rotation = 0; rotation < 4; rotation++) {
-      for (const [baseX, baseY] of cells) {
-        for (const [shapeX, shapeY] of SHAPES[piece][rotation]) {
-          const x = baseX - shapeX;
-          const y = baseY - shapeY;
-          const expected = SHAPES[piece][rotation].map(([dx, dy]) => `${x + dx},${y + dy}`);
-          if (expected.every(cell => actual.has(cell))) return { piece, rotation, x, y };
-        }
-      }
-    }
-    return null;
-  }
-
   function rebuildPieceRecords(virtual = false) {
     const board = virtual ? state.virtualBoard : state.board;
     const groups = virtual ? state.virtualGroups : state.groups;
@@ -473,7 +473,7 @@
   }
 
   function clearLines() {
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
       lockTrainerActive();
       return;
     }
@@ -796,15 +796,30 @@
   }
 
   function nextTrainerPiece() {
-    while (state.trainerQueue.length < 24) {
-      if (!state.trainerBag.length) state.trainerBag = shuffledBag();
-      state.trainerQueue.push(state.trainerBag.shift());
+    fillTrainerQueue();
+    const piece = state.trainerQueue.shift();
+    fillTrainerQueue();
+    if (state.mode === "stStacking") {
+      if (!state.stBagRemaining.length) state.stBagRemaining = PIECES.map((_, index) => index);
+      const bagIndex = state.stBagRemaining.indexOf(piece);
+      if (bagIndex >= 0) state.stBagRemaining.splice(bagIndex, 1);
+      else state.stBagRemaining = PIECES.map((_, index) => index).filter(candidate => candidate !== piece);
     }
-    return state.trainerQueue.shift();
+    return piece;
   }
 
   function fillTrainerQueue() {
-    while (state.trainerQueue.length < 24) {
+    const practice = state.mode === 'stStacking' && state.stStrategyState?.practice;
+    if (practice) {
+      const game = window.STPracticeLibrary.get(practice.seed);
+      if (!game) return;
+      while (state.trainerQueue.length < TRAINER_AI_PREVIEW_COUNT && practice.generated < game.stream.length) {
+        state.trainerQueue.push(game.stream[practice.generated++]);
+      }
+      return;
+    }
+    // Preserve the unfinished bag across refills, Hold and UI preview changes.
+    while (state.trainerQueue.length < TRAINER_AI_PREVIEW_COUNT) {
       if (!state.trainerBag.length) state.trainerBag = shuffledBag();
       state.trainerQueue.push(state.trainerBag.shift());
     }
@@ -889,9 +904,36 @@
     return candidates;
   }
 
+  function analyzeStStacking() {
+    if (state.mode !== 'stStacking' || !state.active) return [];
+    if (state.stStrategyState?.practice) {
+      const practice=state.stStrategyState.practice,label=document.getElementById('stPracticeStatus');
+      label.hidden=false;
+      if (!window.STPracticeLibrary.get(practice.seed)) {
+        state.trainerSuggestions=[];label.textContent='載入已驗證練習局…';
+        window.STPracticeLibrary.load(practice.seed).then(()=>{if(state.stStrategyState?.practice===practice){analyzeStStacking();drawAll();}}).catch(error=>{label.textContent=error.message;});
+        return [];
+      }
+      fillTrainerQueue();
+      const result=window.STPracticeLibrary.suggestion(state.board,state.active.piece,state.holdPiece,practice);
+      label.hidden=Boolean(result.candidate);
+      label.textContent=result.candidate?'':result.message;
+      state.trainerSuggestions=result.candidate?[result.candidate]:[];
+      return state.trainerSuggestions;
+    }
+    state.trainerSuggestions=[];
+    const label=document.getElementById('stPracticeStatus');
+    label.hidden=false;label.textContent='此舊存檔沒有通關計畫，請 Reset 載入練習局。';
+    return [];
+  }
+
+  function analyzeCurrentTrainer() {
+    return state.mode === "stStacking" ? analyzeStStacking() : analyzeTrainer();
+  }
+
   function refreshTrainerSuggestion() {
-    if (state.mode !== "fourColumnCombo") return;
-    analyzeTrainer();
+    if (!isTrainerMode()) return;
+    analyzeCurrentTrainer();
     scheduleTrainerAutoClear();
     drawBoard();
     drawTray();
@@ -928,7 +970,7 @@
   }
 
   function scheduleTrainerAutoClear() {
-    if (state.mode !== "fourColumnCombo" || !state.trainerAutoClearEnabled || !state.active || !isValid(state.active)) {
+    if (!isTrainerMode() || !state.trainerAutoClearEnabled || !state.active || !isValid(state.active)) {
       cancelTrainerAutoClear();
       return;
     }
@@ -948,7 +990,7 @@
       state.trainerAutoClearKey = "";
       const stillMatches = state.trainerSuggestions.some(candidate => isSameOccupiedCells(state.active, candidate.piece));
       if (
-        state.mode === "fourColumnCombo"
+        isTrainerMode()
         && state.trainerAutoClearEnabled
         && state.active
         && stillMatches
@@ -966,11 +1008,21 @@
     return clamp(Math.floor((FOUR_COLUMN_COMBO_COLS - width) / 2) - minX, -minX, FOUR_COLUMN_COMBO_COLS - 1 - maxX);
   }
 
+  function currentTrainerSpawnX(pieceIndex, rotation = 0) {
+    if (state.mode === "stStacking") {
+      const shape = SHAPES[pieceIndex][rotation & 3];
+      const minX = Math.min(...shape.map(([x]) => x));
+      const maxX = Math.max(...shape.map(([x]) => x));
+      return Math.floor((COLS - (maxX - minX + 1)) / 2) - minX;
+    }
+    return trainerSpawnX(pieceIndex, rotation);
+  }
+
   function spawnTrainerPiece() {
     const piece = nextTrainerPiece();
-    state.active = { piece, rotation: 0, x: trainerSpawnX(piece), y: 0 };
+    state.active = { piece, rotation: 0, x: currentTrainerSpawnX(piece), y: 0 };
     state.holdLocked = false;
-    analyzeTrainer();
+    analyzeCurrentTrainer();
     rememberTrainerPieceStart();
     scheduleTrainerAutoClear();
   }
@@ -1053,7 +1105,83 @@
 
   function toggleFourColumnComboMode() {
     if (state.mode === "fourColumnCombo") exitFourColumnComboMode();
-    else enterFourColumnComboMode();
+    else {
+      if (state.mode === "stStacking") exitStStackingMode(false);
+      enterFourColumnComboMode();
+    }
+  }
+
+  let practiceLoadToken=0;
+  async function resetStStacking() {
+    const token=++practiceLoadToken;
+    cancelTrainerAutoClear();
+    state.active=null;state.trainerSuggestions=[];
+    const label=document.getElementById('stPracticeStatus');label.hidden=false;label.textContent='隨機載入已驗證練習局…';
+    drawAll();
+    try {
+      const game=await window.STPracticeLibrary.random();
+      if(token!==practiceLoadToken||state.mode!=='stStacking')return;
+      initializeRecordedStStacking(game);
+    } catch(error) { if(token===practiceLoadToken)label.textContent=error.message; }
+  }
+  function initializeRecordedStStacking(game) {
+    cancelTrainerAutoClear();
+    state.board = window.TetrisRules.createSeedBoard();
+    state.groups = makeBoard(COLS, 0);
+    state.pieceRecords = {};
+    state.nextGroupId = 1;
+    state.trainerQueue = [];
+    state.trainerBag = shuffledBag();
+    state.trainerCombo = 0;
+    state.trainerLines = 0;
+    state.stTsdCount = 0;
+    state.stTetrisCount = 0;
+    state.stB2bCount = 0;
+    state.stB2bActive = false;
+    state.stB2bBroken = false;
+    state.stBagRemaining = [];
+    state.stStrategyState = {practice:{seed:game.seed,step:0,generated:0}};
+    state.holdPiece = null;
+    state.holdLocked = false;
+    state.trainerOutsideCells = [];
+    state.trainerPieceStartSnapshot = null;
+    state.undo = [];
+    fillTrainerQueue();
+    spawnTrainerPiece();
+    drawAll();
+  }
+
+  function enterStStackingMode() {
+    if (state.mode === "stStacking") return;
+    if (state.mode === "fourColumnCombo") exitFourColumnComboMode();
+    state.savedEditor = state.savedEditor || snapshotState();
+    state.mode = "stStacking";
+    document.getElementById("appShell").classList.add("st-stacking-mode");
+    document.getElementById("stStackingBtn").classList.add("active");
+    setTrainerActionLabels(true);
+    boardCanvas.setAttribute("aria-label", "10 by 20 ST Stacking practice board");
+    resetStStacking();
+    haptic();
+  }
+
+  function exitStStackingMode(restoreEditor = true) {
+    if (state.mode !== "stStacking") return;
+    cancelTrainerAutoClear();
+    practiceLoadToken++;
+    document.getElementById('stPracticeStatus').hidden = true;
+    state.mode = "editor";
+    document.getElementById("appShell").classList.remove("st-stacking-mode");
+    document.getElementById("stStackingBtn").classList.remove("active");
+    setTrainerActionLabels(false);
+    boardCanvas.setAttribute("aria-label", "10 by 20 board");
+    if (restoreEditor && state.savedEditor) restore(state.savedEditor);
+    state.savedEditor = null;
+    haptic(6);
+  }
+
+  function toggleStStackingMode() {
+    if (state.mode === "stStacking") exitStStackingMode();
+    else enterStStackingMode();
   }
 
   function setTrainerActionLabels(enabled) {
@@ -1065,20 +1193,37 @@
   }
 
   function lockTrainerActive() {
-    if (state.mode !== "fourColumnCombo") return;
+    if (!isTrainerMode()) return;
     cancelTrainerAutoClear();
     if (!state.active || !isValid(state.active)) {
       haptic([24, 35, 24]);
       return;
     }
     pushSnapshotUndo(state.trainerPieceStartSnapshot);
+    const suggestion = state.trainerSuggestions.find(candidate => isSameOccupiedCells(state.active, candidate.piece));
     const merged = mergePlacement(state.board, state.active, state.active.piece);
     const clearedOpeningRow = merged[ROWS - 1].every(cell => cell !== EMPTY);
-    const result = clearFullLinesFrom(merged, FOUR_COLUMN_COMBO_COLS);
+    const result = clearFullLinesFrom(merged, boardCols());
     state.board = result.board;
-    if (clearedOpeningRow) state.trainerOutsideCells = [];
-    state.groups = makeBoard(FOUR_COLUMN_COMBO_COLS, 0);
-    state.trainerCombo = result.cleared > 0 ? state.trainerCombo + 1 : 0;
+    if (state.mode === "fourColumnCombo" && clearedOpeningRow) state.trainerOutsideCells = [];
+    state.groups = makeBoard(boardCols(), 0);
+    if (state.mode === "stStacking") {
+      if (suggestion) {
+        state.stStrategyState = suggestion.nextStrategyState || state.stStrategyState;
+        state.stTsdCount += Number(suggestion.tSpinDouble);
+        state.stTetrisCount += Number(suggestion.tetris);
+        const nextB2b = window.TetrisRules.advanceBackToBack({
+          active: state.stB2bActive,
+          count: state.stB2bCount,
+          broken: state.stB2bBroken
+        }, suggestion);
+        state.stB2bActive = nextB2b.active;
+        state.stB2bCount = nextB2b.count;
+        state.stB2bBroken = nextB2b.broken;
+      }
+    } else {
+      state.trainerCombo = result.cleared > 0 ? state.trainerCombo + 1 : 0;
+    }
     state.trainerLines += result.cleared;
     spawnTrainerPiece();
     haptic();
@@ -1086,7 +1231,7 @@
   }
 
   function trainerMove(dx, dy) {
-    if (state.mode !== "fourColumnCombo" || !state.active) return;
+    if (!isTrainerMode() || !state.active) return;
     const next = { ...state.active, x: state.active.x + dx, y: state.active.y + dy };
     if (isValid(next)) {
       state.active = next;
@@ -1099,13 +1244,13 @@
   }
 
   function trainerRotate(dir) {
-    if (state.mode !== "fourColumnCombo") return;
+    if (!isTrainerMode()) return;
     rotateActive(dir);
     scheduleTrainerAutoClear();
   }
 
   function trainerAction(action) {
-    if (state.mode !== "fourColumnCombo") return false;
+    if (!isTrainerMode()) return false;
     if (action === "left") trainerMove(-1, 0);
     else if (action === "right") trainerMove(1, 0);
     else if (action === "down") trainerMove(0, 1);
@@ -1141,23 +1286,6 @@
     targetCtx.strokeStyle = color;
     targetCtx.lineWidth = Math.max(1.25, size * 0.07);
     targetCtx.setLineDash([Math.max(2, size * 0.2), Math.max(2, size * 0.13)]);
-    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
-    targetCtx.stroke();
-    targetCtx.restore();
-  }
-
-  function drawVirtualCell(targetCtx, x, y, size, color) {
-    const pad = Math.max(1, size * 0.1);
-    const radius = Math.max(3, size * 0.16);
-    targetCtx.save();
-    targetCtx.globalAlpha = 0.3;
-    targetCtx.fillStyle = color;
-    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
-    targetCtx.fill();
-    targetCtx.globalAlpha = 0.88;
-    targetCtx.strokeStyle = color;
-    targetCtx.lineWidth = Math.max(1.25, size * 0.065);
-    targetCtx.setLineDash([Math.max(2, size * 0.16), Math.max(2, size * 0.1)]);
     roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
     targetCtx.stroke();
     targetCtx.restore();
@@ -1255,7 +1383,7 @@
       }
     }
 
-    if (state.mode === "fourColumnCombo" && state.active && state.trainerGhostEnabled) {
+    if (isTrainerMode() && state.active && state.trainerGhostEnabled) {
       const best = state.trainerSuggestions[0];
       if (best) {
         for (const [x, y] of cellsForPlacement(best.piece)) {
@@ -1264,7 +1392,7 @@
       }
     }
 
-    if (state.mode !== "fourColumnCombo" && state.active && isValid(state.active)) {
+    if (!isTrainerMode() && state.active && isValid(state.active)) {
       const ghost = landingPosition(state.active);
       if (ghost.y !== state.active.y) {
         for (const [x, y] of cellsFor(ghost)) {
@@ -1277,16 +1405,30 @@
       const invalid = !isValid(state.active);
       for (const [x, y] of cellsFor(state.active)) {
         if (y >= 0 && y < ROWS && x >= 0 && x < cols) {
-          if (state.mode === "editor" && state.active.virtual) {
-            drawVirtualCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece]);
-          } else {
-            drawCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece], invalid);
-          }
+          if (state.mode === "editor" && state.active.virtual) drawVirtualCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece]);
+          else drawCell(ctx, ox + x * cell, y * cell, cell, COLORS[state.active.piece], invalid);
         }
       }
     }
 
-    if (state.mode === "fourColumnCombo") scheduleTrainerAutoClear();
+    if (state.mode === "stStacking") drawStRegionDividers(ctx, ox, cell, height);
+    if (isTrainerMode()) scheduleTrainerAutoClear();
+  }
+
+  function drawStRegionDividers(targetCtx, ox, cell, height) {
+    // 4-column left surface, 3-column middle surface, 3-column right surface.
+    // Draw last so the boundaries remain visible over stacked pieces and ghosts.
+    targetCtx.save();
+    targetCtx.setLineDash([]);
+    targetCtx.strokeStyle = "rgba(245, 210, 120, 0.85)";
+    targetCtx.lineWidth = Math.max(2, cell * 0.065);
+    targetCtx.beginPath();
+    for (const boundary of [4, 7]) {
+      targetCtx.moveTo(ox + boundary * cell, 0);
+      targetCtx.lineTo(ox + boundary * cell, height);
+    }
+    targetCtx.stroke();
+    targetCtx.restore();
   }
 
   function drawPieceCanvas(canvas, piece, scale = 1) {
@@ -1308,6 +1450,11 @@
   }
 
   function drawAll() {
+    virtualBoardToggle.hidden = state.mode !== 'editor';
+    virtualMirrorToggle.hidden = state.mode !== 'editor';
+    updateVirtualBoardToggle();
+    updateVirtualMirrorToggle();
+    document.getElementById('resetBagBtn').hidden = state.mode === 'stStacking';
     drawBoard();
     drawTray();
     drawHold();
@@ -1322,13 +1469,19 @@
 
   function drawTray() {
     trayEl.replaceChildren();
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
       comboBoxEl.hidden = false;
       linesBoxEl.hidden = false;
       trainerSwitchesEl.hidden = false;
       updateTrainerSwitches();
-      comboBoxEl.querySelector("strong").textContent = String(state.trainerCombo);
-      linesBoxEl.querySelector("strong").textContent = String(state.trainerLines);
+      comboBoxEl.querySelector("span").textContent = state.mode === "stStacking" ? "SEED" : "Combo";
+      comboBoxEl.querySelector("strong").textContent = state.mode === "stStacking"
+        ? String(state.stStrategyState?.practice?.seed ?? "—")
+        : String(state.trainerCombo);
+      linesBoxEl.querySelector("span").textContent = state.mode === "stStacking" ? "B2B" : "Lines";
+      linesBoxEl.querySelector("strong").textContent = state.mode === "stStacking"
+        ? String(state.stStrategyState?.practice ? Math.max(0,state.stB2bCount-1) : state.stB2bCount)
+        : String(state.trainerLines);
       fillTrainerQueue();
       for (const [index, piece] of state.trainerQueue.slice(0, state.trainerPreviewCount).entries()) {
         const tile = document.createElement("div");
@@ -1390,10 +1543,11 @@
     autoClearToggleBtn.classList.toggle("active", state.trainerAutoClearEnabled);
   }
 
+
   function toggleTrainerPreviewCount() {
     state.trainerPreviewCount = state.trainerPreviewCount === 5 ? 3 : 5;
     updateTrainerSwitches();
-    refreshTrainerSuggestion();
+    drawTray();
     haptic();
   }
 
@@ -1428,19 +1582,19 @@
   function holdActivePiece() {
     if (!state.active || !isValid(state.active) || state.holdLocked) return;
 
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
       const outgoingPiece = state.active.piece;
       if (state.holdPiece === null) {
         state.holdPiece = outgoingPiece;
         const piece = nextTrainerPiece();
-        state.active = { piece, rotation: 0, x: trainerSpawnX(piece), y: 0 };
+        state.active = { piece, rotation: 0, x: currentTrainerSpawnX(piece), y: 0 };
       } else {
         const piece = state.holdPiece;
-        state.active = { piece, rotation: 0, x: trainerSpawnX(piece), y: 0 };
+        state.active = { piece, rotation: 0, x: currentTrainerSpawnX(piece), y: 0 };
         state.holdPiece = outgoingPiece;
       }
       state.holdLocked = true;
-      analyzeTrainer();
+      analyzeCurrentTrainer();
       scheduleTrainerAutoClear();
       haptic();
       drawAll();
@@ -1460,7 +1614,7 @@
         rotation: 0,
         x: state.active.x,
         y: state.active.y,
-        virtual: Boolean(state.active.virtual)
+        virtual: state.mode === 'editor' && Boolean(state.active.virtual)
       });
 
       if (!isValid(candidate)) {
@@ -1495,7 +1649,7 @@
   }
 
   function paintAt(clientX, clientY, forceUndo) {
-    if (state.mode === "fourColumnCombo") return;
+    if (isTrainerMode()) return;
     const { rect, cell } = boardMetrics();
     const x = Math.floor((clientX - rect.left) / cell);
     const y = Math.floor((clientY - rect.top) / cell);
@@ -1574,7 +1728,7 @@
     if (isValid(next)) {
       const moved = next.x !== state.active.x || next.y !== state.active.y;
       state.active = next;
-      if (state.mode === "fourColumnCombo") scheduleTrainerAutoClear();
+      if (isTrainerMode()) scheduleTrainerAutoClear();
       if (moved) interactionHaptic();
     }
     drawBoard();
@@ -1593,61 +1747,10 @@
     }
   }
 
-  function updateVirtualBoardToggle() {
-    const enabled = state.mode === "editor" && state.virtualBoardEnabled;
-    virtualBoardToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
-    virtualBoardToggle.setAttribute("aria-label", enabled ? "Draw on physical board" : "Draw on virtual board");
-  }
-
-  function toggleVirtualBoard() {
-    if (state.mode !== "editor") return;
-    state.virtualBoardEnabled = !state.virtualBoardEnabled;
-    updateVirtualBoardToggle();
-    drawTray();
-    drawBoard();
-    haptic();
-  }
-
-  function updateVirtualMirrorToggle() {
-    virtualMirrorToggle.setAttribute("aria-pressed", state.virtualBoardMirrored ? "true" : "false");
-    virtualMirrorToggle.setAttribute(
-      "aria-label",
-      state.virtualBoardMirrored ? "Restore virtual board orientation" : "Mirror virtual board"
-    );
-  }
-
-  function mirrorVirtualBoard() {
-    if (state.mode !== "editor") return;
-    pushUndo();
-    state.virtualBoard = state.virtualBoard.map(row => row
-      .slice()
-      .reverse()
-      .map(value => MIRRORED_PIECES[value] ?? value));
-    state.virtualGroups = state.virtualGroups.map(row => row.slice().reverse());
-
-    if (state.active?.virtual) {
-      const mirroredPiece = MIRRORED_PIECES[state.active.piece];
-      const mirroredCells = cellsFor(state.active).map(([x, y]) => [COLS - 1 - x, y]);
-      const placement = pieceRecordFromCells(mirroredPiece, mirroredCells);
-      if (placement) {
-        state.active = {
-          ...placement,
-          groupId: state.active.groupId,
-          virtual: true
-        };
-      }
-    }
-
-    rebuildPieceRecords(true);
-    state.virtualBoardMirrored = !state.virtualBoardMirrored;
-    updateVirtualMirrorToggle();
-    drawBoard();
-    haptic();
-  }
-
   function resetBoard() {
-    if (state.mode === "fourColumnCombo") {
-      resetTrainer();
+    if (isTrainerMode()) {
+      if (state.mode === "stStacking") resetStStacking();
+      else resetTrainer();
       refreshTrainerSuggestion();
       haptic();
       return;
@@ -1658,24 +1761,28 @@
     state.pieceRecords = {};
     state.nextGroupId = 1;
     state.virtualBoard = makeBoard(COLS);
-    state.virtualGroups = makeBoard(COLS, 0);
+    state.virtualGroups = makeBoard(COLS,0);
     state.virtualPieceRecords = {};
     state.virtualNextGroupId = 1;
     state.virtualBoardMirrored = false;
-    state.trayOrder = shuffledBag();
-    state.usedPieces = Array(7).fill(false);
     state.virtualTrayOrder = shuffledBag();
     state.virtualUsedPieces = Array(7).fill(false);
+    state.trayOrder = shuffledBag();
+    state.usedPieces = Array(7).fill(false);
     state.holdPiece = null;
     state.holdLocked = false;
     state.active = null;
-    updateVirtualMirrorToggle();
     drawAll();
     haptic();
   }
 
   function resetBag() {
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
+      if (state.mode === "stStacking") {
+        resetStStacking();
+        haptic();
+        return;
+      }
       pushUndo();
       state.trainerBag = shuffledBag();
       state.trainerQueue = [];
@@ -1686,13 +1793,8 @@
       return;
     }
     pushUndo();
-    if (state.virtualBoardEnabled) {
-      state.virtualTrayOrder = shuffledBag();
-      state.virtualUsedPieces.fill(false);
-    } else {
-      state.trayOrder = shuffledBag();
-      state.usedPieces.fill(false);
-    }
+    if (state.virtualBoardEnabled) { state.virtualTrayOrder=shuffledBag();state.virtualUsedPieces.fill(false); }
+    else { state.trayOrder=shuffledBag();state.usedPieces.fill(false); }
     drawTray();
     haptic();
   }
@@ -1721,7 +1823,9 @@
   }
 
   function activeSaveStorageKey() {
-    return state.mode === "fourColumnCombo" ? FOUR_COLUMN_COMBO_SAVE_STORAGE_KEY : SAVE_STORAGE_KEY;
+    if (state.mode === "fourColumnCombo") return FOUR_COLUMN_COMBO_SAVE_STORAGE_KEY;
+    if (state.mode === "stStacking") return ST_STACKING_SAVE_STORAGE_KEY;
+    return SAVE_STORAGE_KEY;
   }
 
   function isMatrix(value, rows, cols, predicate) {
@@ -1791,16 +1895,16 @@
         : 1,
       virtualBoardEnabled: state.mode === "editor" && Boolean(value.virtualBoardEnabled),
       virtualBoardMirrored: Boolean(value.virtualBoardMirrored),
-      trayOrder,
-      usedPieces,
       virtualTrayOrder,
       virtualUsedPieces,
+      trayOrder,
+      usedPieces,
       holdPiece,
       holdLocked: Boolean(value.holdLocked),
       active
     };
 
-    if (state.mode === "fourColumnCombo") {
+    if (isTrainerMode()) {
       normalized.trainerQueue = Array.isArray(value.trainerQueue)
         ? value.trainerQueue.filter(piece => Number.isInteger(piece) && piece >= 0 && piece < 7)
         : [];
@@ -1809,9 +1913,20 @@
         : [];
       normalized.trainerCombo = Number.isInteger(value.trainerCombo) ? value.trainerCombo : 0;
       normalized.trainerLines = Number.isInteger(value.trainerLines) ? value.trainerLines : 0;
-      normalized.trainerPreviewCount = value.trainerPreviewCount === 3 ? 3 : 5;
+      normalized.trainerPreviewCount = value.trainerPreviewCount === 5 ? 5 : 3;
       normalized.trainerGhostEnabled = value.trainerGhostEnabled !== false;
-      normalized.trainerAutoClearEnabled = Boolean(value.trainerAutoClearEnabled);
+      normalized.trainerAutoClearEnabled = value.trainerAutoClearEnabled !== false;
+      normalized.stTsdCount = Number.isInteger(value.stTsdCount) ? value.stTsdCount : 0;
+      normalized.stTetrisCount = Number.isInteger(value.stTetrisCount) ? value.stTetrisCount : 0;
+      normalized.stB2bCount = Number.isInteger(value.stB2bCount) ? value.stB2bCount : 0;
+      normalized.stB2bActive = Boolean(value.stB2bActive);
+      normalized.stB2bBroken = Boolean(value.stB2bBroken);
+      normalized.stBagRemaining = Array.isArray(value.stBagRemaining)
+        ? value.stBagRemaining.filter(piece => Number.isInteger(piece) && piece >= 0 && piece < PIECES.length)
+        : [];
+      normalized.stStrategyState = value.stStrategyState && typeof value.stStrategyState === "object"
+        ? JSON.parse(JSON.stringify(value.stStrategyState))
+        : null;
       normalized.trainerOutsideCells = Array.isArray(value.trainerOutsideCells)
         ? value.trainerOutsideCells.filter(cell => cell
           && Number.isInteger(cell.x) && Number.isInteger(cell.y)
@@ -1994,7 +2109,7 @@
 
     document.querySelectorAll(".tool").forEach(button => {
       button.addEventListener("click", () => {
-        if (state.mode === "fourColumnCombo") return;
+        if (isTrainerMode()) return;
         setTool(button.dataset.tool);
       });
     });
@@ -2031,7 +2146,7 @@
     });
     boardCanvas.addEventListener("pointerdown", event => {
       event.preventDefault();
-      if (state.mode === "fourColumnCombo") {
+      if (isTrainerMode()) {
         if (!state.active) return;
         const pointer = pointerCell(event.clientX, event.clientY);
         state.pointer = {
@@ -2101,7 +2216,7 @@
         const inside = event.clientX >= rect.left && event.clientX <= rect.right
           && event.clientY >= rect.top && event.clientY <= rect.bottom;
         if (inside) {
-          if (state.mode === "fourColumnCombo") trainerRotate(event.clientX < rect.left + rect.width / 2 ? -1 : 1);
+          if (isTrainerMode()) trainerRotate(event.clientX < rect.left + rect.width / 2 ? -1 : 1);
           else rotateActive(event.clientX < rect.left + rect.width / 2 ? -1 : 1);
         }
       }
@@ -2132,7 +2247,7 @@
     document.addEventListener("gesturechange", event => event.preventDefault(), { passive: false });
     document.addEventListener("gestureend", event => event.preventDefault(), { passive: false });
     document.getElementById("undoBtn").addEventListener("click", () => {
-      if (state.mode === "fourColumnCombo") {
+      if (isTrainerMode()) {
         undoFourColumnCombo();
         return;
       }
@@ -2145,12 +2260,22 @@
     document.getElementById("clearBtn").addEventListener("click", clearLines);
     document.getElementById("resetBtn").addEventListener("click", resetBoard);
     document.getElementById("resetBagBtn").addEventListener("click", resetBag);
-    document.getElementById("fourColumnComboBtn").addEventListener("click", toggleFourColumnComboMode);
+    const otherDialog = document.getElementById('otherDialog');
+    document.getElementById('otherBtn').addEventListener('click', () => otherDialog.showModal());
+    document.getElementById("fourColumnComboBtn").addEventListener("click", () => { otherDialog.close(); toggleFourColumnComboMode(); });
+    document.getElementById("stStackingBtn").addEventListener("click", () => { otherDialog.close(); toggleStStackingMode(); });
+    document.getElementById('returnEditorBtn').addEventListener('click', () => {
+      otherDialog.close();
+      if (state.mode === 'stStacking') exitStStackingMode();
+      else if (state.mode === 'fourColumnCombo') exitFourColumnComboMode();
+      setTool('draw');
+      drawAll();
+    });
     previewToggleBtn.addEventListener("click", toggleTrainerPreviewCount);
     ghostToggleBtn.addEventListener("click", toggleTrainerGhost);
     autoClearToggleBtn.addEventListener("click", toggleTrainerAutoClear);
-    virtualBoardToggle.addEventListener("click", toggleVirtualBoard);
-    virtualMirrorToggle.addEventListener("click", mirrorVirtualBoard);
+    virtualBoardToggle.addEventListener('click', toggleVirtualBoard);
+    virtualMirrorToggle.addEventListener('click', mirrorVirtualBoard);
     document.getElementById("fileBtn").addEventListener("click", () => {
       openFileDialog();
     });
@@ -2191,15 +2316,98 @@
     window.addEventListener("resize", drawBoard);
   }
 
+  function pieceRecordFromCells(piece, cells) {
+    if (cells.length !== 4 || piece < 0 || piece >= 7) return null;
+    const actual = new Set(cells.map(([x, y]) => `${x},${y}`));
+    for (let rotation = 0; rotation < 4; rotation++) {
+      for (const [baseX, baseY] of cells) {
+        for (const [shapeX, shapeY] of SHAPES[piece][rotation]) {
+          const x = baseX - shapeX;
+          const y = baseY - shapeY;
+          const expected = SHAPES[piece][rotation].map(([dx, dy]) => `${x + dx},${y + dy}`);
+          if (expected.every(cell => actual.has(cell))) return { piece, rotation, x, y };
+        }
+      }
+    }
+    return null;
+  }
+
+  function drawVirtualCell(targetCtx, x, y, size, color) {
+    const pad = Math.max(1, size * 0.1);
+    const radius = Math.max(3, size * 0.16);
+    targetCtx.save();
+    targetCtx.globalAlpha = 0.3;
+    targetCtx.fillStyle = color;
+    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
+    targetCtx.fill();
+    targetCtx.globalAlpha = 0.88;
+    targetCtx.strokeStyle = color;
+    targetCtx.lineWidth = Math.max(1.25, size * 0.065);
+    targetCtx.setLineDash([Math.max(2, size * 0.16), Math.max(2, size * 0.1)]);
+    roundRect(targetCtx, x + pad, y + pad, size - pad * 2, size - pad * 2, radius);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+
+  function updateVirtualBoardToggle() {
+    const enabled = state.mode === "editor" && state.virtualBoardEnabled;
+    virtualBoardToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+    virtualBoardToggle.setAttribute("aria-label", enabled ? "Draw on physical board" : "Draw on virtual board");
+  }
+
+  function toggleVirtualBoard() {
+    if (state.mode !== "editor") return;
+    state.virtualBoardEnabled = !state.virtualBoardEnabled;
+    updateVirtualBoardToggle();
+    drawTray();
+    drawBoard();
+    haptic();
+  }
+
+  function updateVirtualMirrorToggle() {
+    virtualMirrorToggle.setAttribute("aria-pressed", state.virtualBoardMirrored ? "true" : "false");
+    virtualMirrorToggle.setAttribute(
+      "aria-label",
+      state.virtualBoardMirrored ? "Restore virtual board orientation" : "Mirror virtual board"
+    );
+  }
+
+  function mirrorVirtualBoard() {
+    if (state.mode !== "editor") return;
+    pushUndo();
+    state.virtualBoard = state.virtualBoard.map(row => row
+      .slice()
+      .reverse()
+      .map(value => MIRRORED_PIECES[value] ?? value));
+    state.virtualGroups = state.virtualGroups.map(row => row.slice().reverse());
+
+    if (state.active?.virtual) {
+      const mirroredPiece = MIRRORED_PIECES[state.active.piece];
+      const mirroredCells = cellsFor(state.active).map(([x, y]) => [COLS - 1 - x, y]);
+      const placement = pieceRecordFromCells(mirroredPiece, mirroredCells);
+      if (placement) {
+        state.active = {
+          ...placement,
+          groupId: state.active.groupId,
+          virtual: true
+        };
+      }
+    }
+
+    rebuildPieceRecords(true);
+    state.virtualBoardMirrored = !state.virtualBoardMirrored;
+    updateVirtualMirrorToggle();
+    drawBoard();
+    haptic();
+  }
+
   setupPalette();
   bindEvents();
-  updateVirtualBoardToggle();
-  updateVirtualMirrorToggle();
   drawAll();
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=47", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./service-worker.js?v=54", { updateViaCache: "none" })
         .then(registration => registration.update())
         .catch(error => {
           console.warn("Service worker registration failed:", error);
