@@ -1,8 +1,8 @@
-const CACHE_NAME = "tetraboard-lab-v70-editor-layers";
+const CACHE_NAME = "tetraboard-lab-v71-action-bar";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=70",
+  "./styles.css?v=71",
   "./game-rules.js?v=69",
   "./app.js?v=70",
   "./st-practice-library.js?v=67",
